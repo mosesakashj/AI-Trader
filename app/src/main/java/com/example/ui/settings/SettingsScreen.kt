@@ -83,11 +83,21 @@ fun SettingsScreen(
         )
     }
     var monitoredPairs by remember(config) {
-        mutableStateOf(config?.let { 
+        mutableStateOf(config?.let {
             listOf(
                 if (it.xauusdEnabled) "XAUUSD" else null,
-                if (it.btcusdEnabled) "BTCUSD" else null
-            ).filterNotNull() 
+                if (it.btcusdEnabled) "BTCUSD" else null,
+                if (it.eurusdEnabled) "EURUSD" else null,
+                if (it.gbpusdEnabled) "GBPUSD" else null,
+                if (it.usdjpyEnabled) "USDJPY" else null,
+                if (it.audusdEnabled) "AUDUSD" else null,
+                if (it.usdcadEnabled) "USDCAD" else null,
+                if (it.usdchfEnabled) "USDCHF" else null,
+                if (it.nzdusdEnabled) "NZDUSD" else null,
+                if (it.eurgbpEnabled) "EURGBP" else null,
+                if (it.eurjpyEnabled) "EURJPY" else null,
+                if (it.gbpjpyEnabled) "GBPJPY" else null
+            ).filterNotNull()
         } ?: listOf("XAUUSD", "BTCUSD"))
     }
     var monitoredPairsSaveResult by remember { mutableStateOf<String?>(null) }
@@ -1021,26 +1031,6 @@ if (selectedProviderId == AiProviderType.NVIDIA) {
                         Text("Additional Providers", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                         Text("Gemini, Claude, and ChatGPT integrations planned. Configure API keys when available.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                     }
-                }
-            }
-        }
-
-        // Battery Optimization Card
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, CardBorderDark),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.BatteryAlert, contentDescription = null, tint = StatusWarning)
-                        Text("24/7 Mobile Execution Guidelines", fontWeight = FontWeight.Bold, color = TextPrimary)
-                    }
-                    Text("1. Exclude EdgeTrader from Android Battery Optimization in Settings > Apps > Special App Access.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                    Text("2. Allow Unrestricted Mobile Background Data for continuous quote feeds.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                    Text("3. Keep device plugged into power for extended overnight sessions.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 }
             }
         }

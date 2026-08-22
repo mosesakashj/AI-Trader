@@ -1,20 +1,25 @@
 package com.example.ui.dashboard
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import android.content.Context
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.EdgeTraderApp
 import com.example.data.entities.BotConfigEntity
+import com.example.data.repositories.TradingRepository
 import com.example.domain.model.*
 import com.example.service.TradingForegroundService
+import com.example.trading.TradingEngine
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class DashboardViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val app = application as EdgeTraderApp
-    val repository = app.repository
-    val engine = app.tradingEngine
+@HiltViewModel
+class DashboardViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val repository: TradingRepository,
+    private val engine: TradingEngine
+) : ViewModel() {
 
     val config: StateFlow<BotConfigEntity?> = repository.configFlow.stateIn(
         viewModelScope,
@@ -45,9 +50,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val cfg = repository.getOrCreateConfig()
             repository.updateConfig(cfg.copy(isBotEnabled = enable, emergencyStop = false))
             if (enable) {
-                TradingForegroundService.startService(app)
+                TradingForegroundService.startService(context)
             } else {
-                TradingForegroundService.stopService(app)
+                TradingForegroundService.stopService(context)
             }
         }
     }
@@ -55,7 +60,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun triggerEmergencyStop() {
         viewModelScope.launch {
             engine.triggerEmergencyStop("User Emergency Stop triggered from Dashboard")
-            TradingForegroundService.stopService(app)
+            TradingForegroundService.stopService(context)
         }
     }
 

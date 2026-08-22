@@ -14,11 +14,8 @@ import com.example.data.entities.*
         PositionEntity::class,
         SignalEntity::class,
         CandleEntity::class,
-        StrategyExecutionEntity::class,
-        RiskEventEntity::class,
         SystemEventEntity::class,
-        HeartbeatEntity::class,
-        PerformanceSnapshotEntity::class
+        HeartbeatEntity::class
     ],
     version = 1,
     exportSchema = false

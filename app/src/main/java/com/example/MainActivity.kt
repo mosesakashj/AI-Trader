@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +21,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.ui.backtest.BacktestScreen
 import com.example.ui.components.EmergencyStopDialog
 import com.example.ui.dashboard.DashboardScreen
@@ -39,11 +39,13 @@ import com.example.ui.security.SecurityDocumentationScreen
 import com.example.ui.settings.SettingsScreen
 import com.example.ui.strategy.StrategyScreen
 import com.example.ui.theme.*
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private val dashboardViewModel: DashboardViewModel by viewModels()
+    private val dashboardViewModel: DashboardViewModel by hiltViewModel()
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {

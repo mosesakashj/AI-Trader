@@ -11,10 +11,12 @@ import androidx.core.app.NotificationCompat
 import com.example.EdgeTraderApp
 import com.example.MainActivity
 import com.example.notifications.AndroidNotifier
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
 
+@AndroidEntryPoint
 class TradingForegroundService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())

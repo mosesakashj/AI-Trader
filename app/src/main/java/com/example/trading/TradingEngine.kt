@@ -4,6 +4,7 @@ import com.example.broker.*
 import com.example.data.entities.BotConfigEntity
 import com.example.data.repositories.TradingRepository
 import com.example.domain.model.*
+import com.example.domain.model.toClosedTrade
 import com.example.domain.risk.RiskManager
 import com.example.domain.strategy.NewsFilter
 import com.example.domain.strategy.NoNewsFilter
@@ -457,24 +458,9 @@ class TradingEngine(
                     pos.symbol
                 )
                 repository.removePosition(positionId)
-                val closedTrade = Trade(
-                    id = pos.id,
-                    symbol = pos.symbol,
-                    direction = pos.direction,
-                    volume = pos.volume,
-                    entryPrice = pos.entryPrice,
-                    stopLoss = pos.stopLoss,
-                    takeProfit = pos.takeProfit,
-                    riskAmount = 0.0,
-                    riskPercent = 0.25,
-                    rr = 2.0,
-                    openedAt = pos.openedAt,
-                    closedAt = System.currentTimeMillis(),
+                val closedTrade = pos.toClosedTrade(
                     closePrice = pos.currentPrice,
-                    profit = pos.unrealizedProfit,
-                    profitR = pos.unrealizedR,
-                    status = TradeStatus.CLOSED,
-                    closeReason = CloseReason.EXPIRED,
+                    reason = CloseReason.EXPIRED,
                     mode = activeBroker.mode
                 )
                 repository.recordTrade(closedTrade)
@@ -496,24 +482,9 @@ class TradingEngine(
         }
 
         repository.removePosition(positionId)
-        val closedTrade = Trade(
-            id = pos.id,
-            symbol = pos.symbol,
-            direction = pos.direction,
-            volume = pos.volume,
-            entryPrice = pos.entryPrice,
-            stopLoss = pos.stopLoss,
-            takeProfit = pos.takeProfit,
-            riskAmount = 0.0,
-            riskPercent = 0.25,
-            rr = 2.0,
-            openedAt = pos.openedAt,
-            closedAt = System.currentTimeMillis(),
+        val closedTrade = pos.toClosedTrade(
             closePrice = res.executedPrice,
-            profit = pos.unrealizedProfit,
-            profitR = pos.unrealizedR,
-            status = TradeStatus.CLOSED,
-            closeReason = reason,
+            reason = reason,
             mode = activeBroker.mode
         )
         repository.recordTrade(closedTrade)
@@ -764,24 +735,9 @@ class TradingEngine(
                 }
             }
             repository.removePosition(pos.id)
-            val closedTrade = Trade(
-                id = pos.id,
-                symbol = pos.symbol,
-                direction = pos.direction,
-                volume = pos.volume,
-                entryPrice = pos.entryPrice,
-                stopLoss = pos.stopLoss,
-                takeProfit = pos.takeProfit,
-                riskAmount = 0.0,
-                riskPercent = 0.25,
-                rr = 2.0,
-                openedAt = pos.openedAt,
-                closedAt = System.currentTimeMillis(),
+            val closedTrade = pos.toClosedTrade(
                 closePrice = res.executedPrice,
-                profit = pos.unrealizedProfit,
-                profitR = pos.unrealizedR,
-                status = TradeStatus.CLOSED,
-                closeReason = CloseReason.EMERGENCY_STOP,
+                reason = CloseReason.EMERGENCY_STOP,
                 mode = activeBroker.mode
             )
             repository.recordTrade(closedTrade)

@@ -6,10 +6,12 @@ import android.content.Intent
 import com.example.EdgeTraderApp
 import com.example.domain.model.LogLevel
 import com.example.domain.model.TradingMode
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {

@@ -150,25 +150,6 @@ data class CandleEntity(
     val isClosed: Boolean
 )
 
-@Entity(tableName = "strategy_executions")
-data class StrategyExecutionEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val timestamp: Long,
-    val symbol: String,
-    val decision: String,
-    val details: String,
-    val correlationId: String
-)
-
-@Entity(tableName = "risk_events")
-data class RiskEventEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val timestamp: Long,
-    val eventType: String,
-    val message: String,
-    val severity: String
-)
-
 @Entity(tableName = "system_events")
 data class SystemEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -189,14 +170,4 @@ data class HeartbeatEntity(
     val details: String = ""
 )
 
-@Entity(tableName = "performance_snapshots")
-data class PerformanceSnapshotEntity(
-    @PrimaryKey val date: String,
-    val startingBalance: Double,
-    val endingBalance: Double,
-    val dailyProfit: Double,
-    val tradesCount: Int,
-    val winCount: Int,
-    val lossCount: Int,
-    val maxDrawdownPercent: Double
-)
+

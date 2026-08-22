@@ -106,6 +106,31 @@ data class Position(
     val mode: TradingMode = TradingMode.PAPER
 )
 
+fun Position.toClosedTrade(
+    closePrice: Double,
+    reason: CloseReason,
+    mode: TradingMode
+): Trade = Trade(
+    id = id,
+    symbol = symbol,
+    direction = direction,
+    volume = volume,
+    entryPrice = entryPrice,
+    stopLoss = stopLoss,
+    takeProfit = takeProfit,
+    riskAmount = 0.0,
+    riskPercent = 0.25,
+    rr = 2.0,
+    openedAt = openedAt,
+    closedAt = System.currentTimeMillis(),
+    closePrice = closePrice,
+    profit = unrealizedProfit,
+    profitR = unrealizedR,
+    status = TradeStatus.CLOSED,
+    closeReason = reason,
+    mode = mode
+)
+
 data class SymbolConfig(
     val symbol: String,
     val displayName: String,
