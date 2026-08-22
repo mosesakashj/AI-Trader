@@ -21,6 +21,7 @@ class DemoBrokerAdapter(
     override suspend fun validateOrder(order: OrderRequest): OrderValidation = paperDelegate.validateOrder(order)
     override suspend fun placeOrder(order: OrderRequest): OrderResult = paperDelegate.placeOrder(order)
     override suspend fun closePosition(positionId: String, reason: CloseReason): OrderResult = paperDelegate.closePosition(positionId, reason)
+    override suspend fun updatePositionSl(positionId: String, newStopLoss: Double, newTakeProfit: Double): Boolean = paperDelegate.updatePositionSl(positionId, newStopLoss, newTakeProfit)
     override suspend fun reconcile(): BrokerState = paperDelegate.reconcile()
     override suspend fun onTick(quote: Quote): List<Trade> = paperDelegate.onTick(quote).map { it.copy(mode = TradingMode.DEMO) }
 }

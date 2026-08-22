@@ -191,7 +191,16 @@ data class StrategyConfig(
     // Scalping parameters
     val scalpTimeframe: Timeframe = Timeframe.M5,
     val scalpMinRr: Double = 1.5,
-    val scalpMaxHoldMinutes: Int = 30
+    val scalpMaxHoldMinutes: Int = 30,
+
+    // Break-Even & Dynamic Position Management
+    val breakEvenEnabled: Boolean = true,
+    val breakEvenTriggerR: Double = 0.8,
+    val breakEvenBufferPips: Double = 1.5,
+    val trailingStopEnabled: Boolean = true,
+    val trailingStopTriggerR: Double = 1.2,
+    val trailingStopDistanceAtr: Double = 1.0,
+    val earlyExitOnTrendReversal: Boolean = true
 )
 
 data class RiskConfig(

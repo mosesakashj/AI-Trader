@@ -20,6 +20,7 @@ interface BrokerAdapter {
     suspend fun validateOrder(order: OrderRequest): OrderValidation
     suspend fun placeOrder(order: OrderRequest): OrderResult
     suspend fun closePosition(positionId: String, reason: CloseReason): OrderResult
+    suspend fun updatePositionSl(positionId: String, newStopLoss: Double, newTakeProfit: Double = 0.0): Boolean
     suspend fun reconcile(): BrokerState
     suspend fun onTick(quote: Quote): List<Trade> // Checks and executes SL/TP on active positions
 }

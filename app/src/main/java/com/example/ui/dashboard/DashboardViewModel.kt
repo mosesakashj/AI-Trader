@@ -3,22 +3,19 @@ package com.example.ui.dashboard
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.EdgeTraderApp
 import com.example.data.entities.BotConfigEntity
 import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.*
 import com.example.service.TradingForegroundService
 import com.example.trading.TradingEngine
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@HiltViewModel
-class DashboardViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val repository: FirestoreRepository,
-    private val engine: TradingEngine
+class DashboardViewModel(
+    private val context: Context = EdgeTraderApp.instance,
+    private val repository: FirestoreRepository = EdgeTraderApp.instance.firestoreRepository,
+    private val engine: TradingEngine = EdgeTraderApp.instance.tradingEngine
 ) : ViewModel() {
 
     val config: StateFlow<BotConfigEntity?> = repository.configFlow.stateIn(

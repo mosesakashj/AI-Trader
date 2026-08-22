@@ -3,7 +3,6 @@ package com.example.domain.backtest
 import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.model.*
 import com.example.domain.risk.RiskManager
-import com.example.domain.strategy.StrategyConfig
 import com.example.domain.strategy.TradingStrategy
 import java.util.UUID
 import kotlin.math.abs
@@ -168,18 +167,19 @@ class BacktestingEngine(
                 val riskDist = abs(t.entryPrice - t.stopLoss)
                 val unrealizedR = if (riskDist > 0) priceDiff / riskDist else 0.0
 
-                // 1a. Auto Break-Even (+1.0R achieved)
-                if (enableAutoBreakEven && unrealizedR >= 1.0) {
+                // 1a. Auto Break-Even (+0.8R default or configured trigger)
+                if (enableAutoBreakEven && unrealizedR >= activeStrategy.strategyConfig.breakEvenTriggerR) {
+                    val bufferDist = (activeStrategy.strategyConfig.breakEvenBufferPips * tickSize * 10.0).coerceAtLeast(symbolConfig.spreadLimit * 0.2)
                     if (t.direction == TradeDirection.BUY && t.stopLoss < t.entryPrice) {
-                        t = t.copy(stopLoss = t.entryPrice + (symbolConfig.spreadLimit * 0.2))
+                        t = t.copy(stopLoss = t.entryPrice + bufferDist)
                     } else if (t.direction == TradeDirection.SELL && t.stopLoss > t.entryPrice) {
-                        t = t.copy(stopLoss = t.entryPrice - (symbolConfig.spreadLimit * 0.2))
+                        t = t.copy(stopLoss = t.entryPrice - bufferDist)
                     }
                 }
 
-                // 1b. Auto Trailing Stop (+1.5R achieved)
-                if (enableAutoTrailing && unrealizedR >= 1.5) {
-                    val trailDist = atr * 1.2
+                // 1b. Auto Trailing Stop (+1.2R default or configured trigger)
+                if (enableAutoTrailing && unrealizedR >= activeStrategy.strategyConfig.trailingStopTriggerR) {
+                    val trailDist = (atr * activeStrategy.strategyConfig.trailingStopDistanceAtr).coerceAtLeast(tickSize * 25.0)
                     if (t.direction == TradeDirection.BUY) {
                         val candidate = currentCandle.high - trailDist
                         if (candidate > t.stopLoss) {
@@ -199,7 +199,13 @@ class BacktestingEngine(
                     if (currentCandle.low <= t.stopLoss) {
                         isClosed = true
                         exitPrice = t.stopLoss
-                        reason = if (t.stopLoss >= t.entryPrice) CloseReason.TAKE_PROFIT else CloseReason.STOP_LOSS
+                        val isBreakEven = t.stopLoss >= (t.entryPrice - 0.0001)
+                        val isTrailing = t.stopLoss > (t.entryPrice + (tickSize * 10.0))
+                        reason = when {
+                            isTrailing -> CloseReason.TRAILING_STOP
+                            isBreakEven -> CloseReason.BREAK_EVEN
+                            else -> CloseReason.STOP_LOSS
+                        }
                     } else if (currentCandle.high >= t.takeProfit) {
                         isClosed = true
                         exitPrice = t.takeProfit
@@ -209,7 +215,13 @@ class BacktestingEngine(
                     if (currentCandle.high >= t.stopLoss) {
                         isClosed = true
                         exitPrice = t.stopLoss
-                        reason = if (t.stopLoss <= t.entryPrice) CloseReason.TAKE_PROFIT else CloseReason.STOP_LOSS
+                        val isBreakEven = t.stopLoss <= (t.entryPrice + 0.0001)
+                        val isTrailing = t.stopLoss < (t.entryPrice - (tickSize * 10.0))
+                        reason = when {
+                            isTrailing -> CloseReason.TRAILING_STOP
+                            isBreakEven -> CloseReason.BREAK_EVEN
+                            else -> CloseReason.STOP_LOSS
+                        }
                     } else if (currentCandle.low <= t.takeProfit) {
                         isClosed = true
                         exitPrice = t.takeProfit
@@ -655,8 +667,8 @@ class BacktestingEngine(
 
         val probabilityOfProfit = simulations.count { it.endingEquity > initialBalance }.toDouble() / simulationCount * 100.0
         val probabilityOfRuin = simulations.count { it.endingEquity < initialBalance * 0.5 }.toDouble() / simulationCount * 100.0
-        val averageMaxDrawdown = simulations.averageOf { it.maxDrawdownPercent }
-        val averageReturn = simulations.averageOf { it.totalReturn }
+        val averageMaxDrawdown = if (simulations.isNotEmpty()) simulations.map { it.maxDrawdownPercent }.average() else 0.0
+        val averageReturn = if (simulations.isNotEmpty()) simulations.map { it.totalReturn }.average() else 0.0
 
         val allReturns = simulations.flatMap { sim ->
             sim.trades.map { it.profit / initialBalance }

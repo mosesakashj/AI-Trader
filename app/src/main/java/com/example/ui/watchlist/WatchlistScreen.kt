@@ -17,7 +17,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.domain.model.AssetType
 import com.example.domain.model.SymbolCatalog
 import com.example.ui.theme.*
@@ -25,7 +25,7 @@ import com.example.ui.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WatchlistScreen(
-    viewModel: WatchlistViewModel = hiltViewModel()
+    viewModel: WatchlistViewModel = viewModel()
 ) {
     val uiItems by viewModel.uiItems.collectAsState()
     val availableSymbols by viewModel.availableSymbols.collectAsState()
@@ -251,7 +251,7 @@ private fun WatchlistCard(
 }
 
 @Composable
-private fun MiniIndicator(label: String, value: String, color: Color) {
+private fun RowScope.MiniIndicator(label: String, value: String, color: Color) {
     Card(
         colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
         shape = RoundedCornerShape(8.dp),

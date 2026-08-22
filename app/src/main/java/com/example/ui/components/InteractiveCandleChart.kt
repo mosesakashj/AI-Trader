@@ -45,10 +45,10 @@ import kotlin.math.min
 @Composable
 fun InteractiveCandleChart(
     candles: List<Candle>,
-    currentQuote: Quote?,
-    timeframe: Timeframe,
-    onTimeframeSelected: (Timeframe) -> Unit,
-    onRefresh: () -> Unit,
+    currentQuote: Quote? = null,
+    timeframe: Timeframe = Timeframe.M15,
+    onTimeframeSelected: (Timeframe) -> Unit = {},
+    onRefresh: () -> Unit = {},
     isLoading: Boolean = false,
     modifier: Modifier = Modifier
 ) {

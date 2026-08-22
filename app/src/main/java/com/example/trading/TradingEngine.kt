@@ -3,6 +3,7 @@ package com.example.trading
 import com.example.broker.*
 import com.example.data.entities.BotConfigEntity
 import com.example.data.firestore.FirestoreRepository
+import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.model.*
 import com.example.domain.model.toClosedTrade
 import com.example.domain.risk.RiskManager
@@ -19,10 +20,10 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.minOf
+import kotlin.math.min
 
 class TradingEngine(
-    private val repository: FirestoreRepository,
+    val repository: FirestoreRepository,
     private val notificationManager: AppNotificationManager,
     private val brokerFactory: (TradingMode) -> BrokerAdapter,
     val marketDataProvider: MarketDataProvider = PaperMarketDataProvider()
@@ -321,7 +322,10 @@ class TradingEngine(
         updatedMap[quote.symbol] = quote
         _activeQuotes.value = updatedMap
 
-        // 2. Process active positions with quote (SL/TP check)
+        // 2. Auto-manage open positions (Break-Even, Trailing Stop, Trend Reversal Early Exit)
+        autoManagePositions(quote)
+
+        // 3. Process active positions with quote (SL/TP/BE/Trailing execution check)
         val closedTrades = activeBroker.onTick(quote)
         closedTrades.forEach { trade ->
             repository.recordTrade(trade)
@@ -340,7 +344,7 @@ class TradingEngine(
                 LogLevel.INFO,
                 "TradingEngine",
                 "TRADE_CLOSED",
-                "Closed ${trade.symbol} ${trade.direction}: P/L $${"%.2f".format(trade.profit)} (${trade.profitR}R)",
+                "Closed ${trade.symbol} ${trade.direction} [${trade.closeReason ?: "EXIT"}]: P/L $${"%.2f".format(trade.profit)} (${"%.2f".format(trade.profitR)}R)",
                 trade.symbol
             )
 
@@ -350,9 +354,6 @@ class TradingEngine(
                 stateMachine.transitionTo(StateMachineState.READY, "All positions closed")
             }
         }
-
-        // 3. Auto-manage open positions (Break-Even & Trailing Stop)
-        autoManagePositions(quote)
 
         // 4. Update account info
         val account = activeBroker.getAccount()
@@ -373,6 +374,8 @@ class TradingEngine(
 
     private suspend fun autoManagePositions(quote: Quote) {
         val openPositions = repository.getOpenPositions().filter { it.symbol == quote.symbol }
+        if (openPositions.isEmpty()) return
+
         val config = repository.getOrCreateConfig()
         val symbolConfig = symbolConfigs[quote.symbol] ?: return
         val candles = candlesMap[quote.symbol] ?: emptyList()
@@ -391,35 +394,36 @@ class TradingEngine(
             var slChanged = false
             var slReason = ""
 
-            // 1. Break-Even Trigger (+1.0R achieved)
-            if (unrealizedR >= 1.0) {
+            // 1. Break-Even Protection: Trigger once profit reaches breakEvenTriggerR (e.g. +0.8R)
+            if (config.breakEvenEnabled && unrealizedR >= config.breakEvenTriggerR) {
+                val bufferPipsDistance = (config.breakEvenBufferPips * symbolConfig.tickSize * 10.0).coerceAtLeast(symbolConfig.spreadLimit * 0.2)
                 if (pos.direction == TradeDirection.BUY && pos.stopLoss < pos.entryPrice) {
-                    updatedSL = pos.entryPrice + (symbolConfig.spreadLimit * 0.2)
+                    updatedSL = pos.entryPrice + bufferPipsDistance
                     slChanged = true
-                    slReason = "Auto Break-Even secured at +1.0R"
+                    slReason = "Break-Even secured at +${"%.2f".format(unrealizedR)}R (SL at +${config.breakEvenBufferPips} pips buffer)"
                 } else if (pos.direction == TradeDirection.SELL && pos.stopLoss > pos.entryPrice) {
-                    updatedSL = pos.entryPrice - (symbolConfig.spreadLimit * 0.2)
+                    updatedSL = pos.entryPrice - bufferPipsDistance
                     slChanged = true
-                    slReason = "Auto Break-Even secured at +1.0R"
+                    slReason = "Break-Even secured at +${"%.2f".format(unrealizedR)}R (SL at -${config.breakEvenBufferPips} pips buffer)"
                 }
             }
 
-            // 2. Dynamic Trailing Stop (+1.5R achieved)
-            if (unrealizedR >= 1.5) {
-                val trailDistance = atr * config.atrSlMultiplier * 0.8
+            // 2. Dynamic Trailing Stop: Trailing price once profit reaches trailingStopTriggerR (e.g. +1.2R)
+            if (config.trailingStopEnabled && unrealizedR >= config.trailingStopTriggerR) {
+                val trailDistance = (atr * config.trailingStopDistanceAtr).coerceAtLeast(symbolConfig.tickSize * 25.0)
                 if (pos.direction == TradeDirection.BUY) {
                     val candidateSL = quote.bid - trailDistance
                     if (candidateSL > updatedSL) {
                         updatedSL = candidateSL
                         slChanged = true
-                        slReason = "Auto Trailing Stop locked at ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)}"
+                        slReason = "Trailing Stop ratcheted to ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)} (+${"%.2f".format(unrealizedR)}R)"
                     }
                 } else {
                     val candidateSL = quote.ask + trailDistance
                     if (candidateSL < updatedSL) {
                         updatedSL = candidateSL
                         slChanged = true
-                        slReason = "Auto Trailing Stop locked at ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)}"
+                        slReason = "Trailing Stop ratcheted to ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)} (+${"%.2f".format(unrealizedR)}R)"
                     }
                 }
             }
@@ -433,13 +437,30 @@ class TradingEngine(
             repository.recordPosition(updatedPos)
 
             if (slChanged) {
+                // Synchronize SL with active broker adapter
+                activeBroker.updatePositionSl(pos.id, updatedSL)
                 repository.logEvent(
                     LogLevel.INFO,
                     "TradingEngine",
                     "POSITION_SL_UPDATED",
-                    "Auto-Trade $slReason for ${pos.symbol} (${pos.direction})",
+                    "Auto-Protect: $slReason for ${pos.symbol} (${pos.direction})",
                     pos.symbol
                 )
+            }
+
+            // 3. Trend Reversal / Market Direction Flip Early Exit Protection
+            if (config.earlyExitOnTrendReversal) {
+                val exitDecision = strategy.checkTrendReversalExit(updatedPos, quote, candles, symbolConfig)
+                if (exitDecision.shouldExit) {
+                    repository.logEvent(
+                        LogLevel.WARN,
+                        "TradingEngine",
+                        "EARLY_EXIT_TRIGGERED",
+                        "Early Protective Exit on ${pos.symbol} (${pos.direction}): ${exitDecision.reason}",
+                        pos.symbol
+                    )
+                    closeSinglePosition(pos.id, CloseReason.TREND_REVERSAL)
+                }
             }
         }
     }

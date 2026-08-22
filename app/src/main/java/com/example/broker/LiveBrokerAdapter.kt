@@ -376,6 +376,40 @@ class LiveBrokerAdapter(
         )
     }
 
+    override suspend fun updatePositionSl(positionId: String, newStopLoss: Double, newTakeProfit: Double): Boolean = withContext(Dispatchers.IO) {
+        val gatewayUrl = secureStorage?.getBrokerGatewayUrl()?.trim()
+        val pos = localPositionsCache[positionId]
+
+        if (pos != null) {
+            localPositionsCache[positionId] = pos.copy(
+                stopLoss = newStopLoss,
+                takeProfit = if (newTakeProfit > 0.0) newTakeProfit else pos.takeProfit
+            )
+        }
+
+        if (!gatewayUrl.isNullOrBlank()) {
+            try {
+                val fullUrl = if (gatewayUrl.endsWith("/")) "${gatewayUrl}positions/$positionId/modify" else "$gatewayUrl/positions/$positionId/modify"
+                val payload = JSONObject().apply {
+                    put("stopLoss", newStopLoss)
+                    if (newTakeProfit > 0.0) put("takeProfit", newTakeProfit)
+                }
+                val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+                val reqBuilder = Request.Builder().url(fullUrl).post(payload.toString().toRequestBody(mediaType))
+                val apiKey = secureStorage.getBrokerApiKey()
+                if (apiKey.isNotBlank()) {
+                    reqBuilder.header("Authorization", "Bearer $apiKey")
+                }
+                client.newCall(reqBuilder.build()).execute().use { resp ->
+                    return@withContext resp.isSuccessful
+                }
+            } catch (e: Exception) {
+                Log.w("LiveBrokerAdapter", "Modify position SL error: ${e.message}")
+            }
+        }
+        pos != null
+    }
+
     override suspend fun reconcile(): BrokerState {
         return if (isConnectedState) {
             BrokerState.Connected(getAccount(), getPositions())
@@ -405,13 +439,27 @@ class LiveBrokerAdapter(
 
             if (pos.direction == TradeDirection.BUY) {
                 if (quote.bid <= pos.stopLoss && pos.stopLoss > 0) {
-                    positionsToClose.add(pos to CloseReason.STOP_LOSS)
+                    val isBreakEven = pos.stopLoss >= (pos.entryPrice - 0.001)
+                    val isTrailing = pos.stopLoss > (pos.entryPrice + 0.5)
+                    val reason = when {
+                        isTrailing -> CloseReason.TRAILING_STOP
+                        isBreakEven -> CloseReason.BREAK_EVEN
+                        else -> CloseReason.STOP_LOSS
+                    }
+                    positionsToClose.add(pos to reason)
                 } else if (quote.bid >= pos.takeProfit && pos.takeProfit > 0) {
                     positionsToClose.add(pos to CloseReason.TAKE_PROFIT)
                 }
             } else {
                 if (quote.ask >= pos.stopLoss && pos.stopLoss > 0) {
-                    positionsToClose.add(pos to CloseReason.STOP_LOSS)
+                    val isBreakEven = pos.stopLoss <= (pos.entryPrice + 0.001)
+                    val isTrailing = pos.stopLoss < (pos.entryPrice - 0.5)
+                    val reason = when {
+                        isTrailing -> CloseReason.TRAILING_STOP
+                        isBreakEven -> CloseReason.BREAK_EVEN
+                        else -> CloseReason.STOP_LOSS
+                    }
+                    positionsToClose.add(pos to reason)
                 } else if (quote.ask <= pos.takeProfit && pos.takeProfit > 0) {
                     positionsToClose.add(pos to CloseReason.TAKE_PROFIT)
                 }
@@ -419,7 +467,7 @@ class LiveBrokerAdapter(
         }
 
         positionsToClose.forEach { (pos, reason) ->
-            val exitPrice = if (reason == CloseReason.STOP_LOSS) pos.stopLoss else pos.takeProfit
+            val exitPrice = if (reason == CloseReason.TAKE_PROFIT) pos.takeProfit else pos.stopLoss
             val priceDiff = if (pos.direction == TradeDirection.BUY) exitPrice - pos.entryPrice else pos.entryPrice - exitPrice
             val realizedProfit = priceDiff * contractSize * pos.volume
             val riskDist = abs(pos.entryPrice - pos.stopLoss)

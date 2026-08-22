@@ -3,23 +3,24 @@ package com.example.ai
 import com.example.security.SecureStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.net.URI
-import java.time.Duration
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 class ChatGptProvider(
-    private val secureStorage: SecureStorage,
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val secureStorage: SecureStorage = SecureStorage(com.example.EdgeTraderApp.instance)
 ) : AiProvider {
 
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(60))
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    private val helper = NvidiaLlmProvider(secureStorage)
 
     override val config: AiProviderConfig
         get() = AiProviderConfig(
@@ -41,10 +42,10 @@ class ChatGptProvider(
                     return@withContext Result.failure(IllegalStateException("ChatGPT API key not configured"))
                 }
 
-                val prompt = buildAnalysisPrompt(request)
+                val prompt = helper.buildAnalysisPrompt(request)
                 val chatRequest = AiChatRequest(
                     messages = listOf(
-                        AiChatMessage("system", getSystemPrompt()),
+                        AiChatMessage("system", helper.getSystemPrompt()),
                         AiChatMessage("user", prompt)
                     ),
                     temperature = config.temperature,
@@ -52,7 +53,7 @@ class ChatGptProvider(
                 )
 
                 val chatResponse = chat(chatRequest).getOrThrow()
-                parseAnalysisResponse(chatResponse.content, request)
+                helper.parseAnalysisResponse(chatResponse.content, request)
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -62,35 +63,45 @@ class ChatGptProvider(
     override suspend fun chat(request: AiChatRequest): Result<AiChatResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                val requestBody = json.encodeToString(
-                    ChatGptRequest(
-                        model = config.model,
-                        messages = request.messages.map { ChatGptMessage(it.role, it.content) },
-                        temperature = request.temperature,
-                        max_tokens = request.maxTokens,
-                        stream = false
-                    )
-                )
+                val messagesArray = JSONArray()
+                request.messages.forEach { msg ->
+                    val obj = JSONObject()
+                    obj.put("role", msg.role)
+                    obj.put("content", msg.content)
+                    messagesArray.put(obj)
+                }
 
-                val httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(config.apiEndpoint))
-                    .timeout(Duration.ofSeconds(config.timeoutSeconds.toLong()))
-                    .header("Authorization", "Bearer ${config.apiKey}")
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                val jsonBody = JSONObject().apply {
+                    put("model", config.model)
+                    put("messages", messagesArray)
+                    put("temperature", request.temperature)
+                    put("max_tokens", request.maxTokens)
+                }
+
+                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
+                val httpRequest = Request.Builder()
+                    .url(config.apiEndpoint)
+                    .addHeader("Authorization", "Bearer ${config.apiKey}")
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
                     .build()
 
-                val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString())
+                val response = httpClient.newCall(httpRequest).execute()
+                val responseBodyStr = response.body?.string() ?: ""
 
-                if (response.statusCode() != 200) {
+                if (!response.isSuccessful) {
                     return@withContext Result.failure(
-                        RuntimeException("ChatGPT API error: ${response.statusCode()} - ${response.body()}")
+                        RuntimeException("ChatGPT API error: ${response.code} - $responseBodyStr")
                     )
                 }
 
-                val chatGptResponse = json.decodeFromString<ChatGptResponse>(response.body())
-                val content = chatGptResponse.choices.firstOrNull()?.message?.content ?: ""
-                val tokensUsed = chatGptResponse.usage?.total_tokens ?: 0
+                val respObj = JSONObject(responseBodyStr)
+                val choices = respObj.optJSONArray("choices")
+                val firstChoice = choices?.optJSONObject(0)
+                val msgObj = firstChoice?.optJSONObject("message")
+                val content = msgObj?.optString("content", "") ?: ""
+                val usage = respObj.optJSONObject("usage")
+                val tokensUsed = usage?.optInt("total_tokens", 0) ?: 0
 
                 Result.success(AiChatResponse(
                     content = content,
@@ -123,51 +134,4 @@ class ChatGptProvider(
             }
         }
     }
-
-    private fun getSystemPrompt(): String = NvidiaLlmProvider().getSystemPrompt()
-
-    private fun buildAnalysisPrompt(request: AiAnalysisRequest): String = NvidiaLlmProvider().buildAnalysisPrompt(request)
-
-    private fun parseAnalysisResponse(content: String, request: AiAnalysisRequest): Result<AiAnalysisResponse> {
-        return NvidiaLlmProvider().parseAnalysisResponse(content, request)
-    }
-
-    @Serializable
-    private data class ChatGptRequest(
-        val model: String,
-        val messages: List<ChatGptMessage>,
-        val temperature: Double,
-        val max_tokens: Int,
-        val stream: Boolean
-    )
-
-    @Serializable
-    private data class ChatGptMessage(
-        val role: String,
-        val content: String
-    )
-
-    @Serializable
-    private data class ChatGptResponse(
-        val id: String,
-        val object: String,
-        val created: Long,
-        val model: String,
-        val choices: List<ChatGptChoice>,
-        val usage: ChatGptUsage?
-    )
-
-    @Serializable
-    private data class ChatGptChoice(
-        val index: Int,
-        val message: ChatGptMessage?,
-        val finish_reason: String?
-    )
-
-    @Serializable
-    private data class ChatGptUsage(
-        val prompt_tokens: Int,
-        val completion_tokens: Int,
-        val total_tokens: Int
-    )
 }

@@ -1,8 +1,5 @@
 package com.example.ai
 
-import kotlinx.serialization.Serializable
-
-@Serializable
 data class AiProviderConfig(
     val id: String,
     val name: String,
@@ -15,7 +12,6 @@ data class AiProviderConfig(
     val timeoutSeconds: Int = 30
 )
 
-@Serializable
 data class AiAnalysisRequest(
     val symbol: String,
     val timeframe: String,
@@ -32,7 +28,6 @@ data class AiAnalysisRequest(
     val riskPercent: Double
 )
 
-@Serializable
 data class CandleSnapshot(
     val openTime: Long,
     val open: Double,
@@ -42,7 +37,6 @@ data class CandleSnapshot(
     val volume: Double
 )
 
-@Serializable
 data class AiAnalysisResponse(
     val provider: String,
     val timestamp: Long = System.currentTimeMillis(),
@@ -65,7 +59,6 @@ enum class AiRecommendation {
     REDUCE_RISK
 }
 
-@Serializable
 data class KeyLevels(
     val support: List<Double>,
     val resistance: List<Double>,
@@ -73,7 +66,6 @@ data class KeyLevels(
     val fibonacciLevels: Map<String, Double>
 )
 
-@Serializable
 data class RiskAssessment(
     val riskLevel: RiskLevel,
     val maxRiskPercent: Double,
@@ -91,20 +83,17 @@ enum class RiskLevel {
     VERY_HIGH
 }
 
-@Serializable
 data class AiChatMessage(
     val role: String, // "system", "user", "assistant"
     val content: String
 )
 
-@Serializable
 data class AiChatRequest(
     val messages: List<AiChatMessage>,
     val temperature: Double = 0.3,
     val maxTokens: Int = 2048
 )
 
-@Serializable
 data class AiChatResponse(
     val content: String,
     val provider: String,

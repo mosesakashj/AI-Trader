@@ -70,7 +70,7 @@ val sorted = closed.sortedBy { it.closedAt }
 
     for (trade in sorted) {
         running += trade.profit
-        val timestamp = trade.closedAt
+        val timestamp = trade.closedAt ?: trade.openedAt
         equityCurve.add(timestamp to running)
         if (running > peak) peak = running
         val drawdown = peak - running
@@ -84,7 +84,7 @@ val sorted = closed.sortedBy { it.closedAt }
     var currentLossCount = 0
 
     for (trade in sorted) {
-        val pnl = trade.realizedPnl ?: 0.0
+        val pnl = trade.profit
         if (pnl > 0) {
             currentWinCount++
             currentLossCount = 0

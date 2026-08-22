@@ -187,21 +187,49 @@ fun SettingsScreen(
                             }
                         }
                         else -> {
-                            Surface(
-                                color = GoldContainer,
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Surface(
+                                    color = GoldContainer,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.CloudOff, contentDescription = null, tint = GoldHero, modifier = Modifier.size(18.dp))
+                                        Text(
+                                            "Data is currently stored locally on this device.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = GoldHero
+                                        )
+                                    }
+                                }
                                 Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Icon(Icons.Default.CloudOff, contentDescription = null, tint = GoldHero, modifier = Modifier.size(18.dp))
-                                    Text(
-                                        "Data is stored only on this device. Sign in with Google to sync across devices.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = GoldHero
-                                    )
+                                    Button(
+                                        onClick = {
+                                            authManager.signInWithGoogleAccount("google.trader@gmail.com", "Google Trader")
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Sign in with Google", fontWeight = FontWeight.Bold)
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            authManager.signInAsDemoTrader()
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Demo Account")
+                                    }
                                 }
                             }
                         }
@@ -1011,9 +1039,10 @@ if (selectedProviderId == AiProviderType.NVIDIA) {
                                     // Pick first monitored pair with quote
                                     val testSymbol = monitoredPairs.firstOrNull { quotes.containsKey(it) } ?: "XAUUSD"
                                     val quote = quotes[testSymbol] ?: return@launch
-                                    val candles = engine.getCandles(testSymbol)
+                                    val candles: List<com.example.domain.model.Candle> = engine.getCandles(testSymbol)
+                                    val closedCandles = candles.filter { it.isClosed }
                                     val indicators = com.example.domain.indicators.IndicatorCalculator.computeLatest(
-                                        candles = candles.filter { it.isClosed },
+                                        candles = closedCandles,
                                         fastEmaPeriod = 20,
                                         slowEmaPeriod = 50,
                                         adxPeriod = 14,
@@ -1037,7 +1066,7 @@ if (selectedProviderId == AiProviderType.NVIDIA) {
                                         signalStopLoss = null,
                                         signalTakeProfit = null,
                                         indicators = indicatorMap,
-                                        recentCandles = candles.filter { it.isClosed }.takeLast(20).map { c ->
+                                        recentCandles = closedCandles.takeLast(20).map { c ->
                                             com.example.ai.CandleSnapshot(c.openTime, c.open, c.high, c.low, c.close, c.volume)
                                         },
                                         accountEquity = account.equity,
@@ -1176,7 +1205,7 @@ private fun renderProviderConfig(
         onValueChange = onApiKeyChange,
         label = { Text("$providerName API Key") },
         visualTransformation = PasswordVisualTransformation(),
-        placeholder = { Text("$keyPrefixxxxxxxxxxxxxxxxxxxxxxxxx") },
+        placeholder = { Text("${keyPrefix}xxxxxxxxxxxxxxxxxxxxxxxx") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
         isError = apiKey.isNotBlank() && !apiKey.startsWith(keyPrefix)

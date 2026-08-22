@@ -49,6 +49,13 @@ object FirestoreMapper {
         "scalpTimeframe" to config.scalpTimeframe,
         "scalpMinRr" to config.scalpMinRr,
         "scalpMaxHoldMinutes" to config.scalpMaxHoldMinutes,
+        "breakEvenEnabled" to config.breakEvenEnabled,
+        "breakEvenTriggerR" to config.breakEvenTriggerR,
+        "breakEvenBufferPips" to config.breakEvenBufferPips,
+        "trailingStopEnabled" to config.trailingStopEnabled,
+        "trailingStopTriggerR" to config.trailingStopTriggerR,
+        "trailingStopDistanceAtr" to config.trailingStopDistanceAtr,
+        "earlyExitOnTrendReversal" to config.earlyExitOnTrendReversal,
         "xauusdEnabled" to config.xauusdEnabled,
         "btcusdEnabled" to config.btcusdEnabled,
         "eurusdEnabled" to config.eurusdEnabled,
@@ -111,6 +118,13 @@ object FirestoreMapper {
         scalpTimeframe = map["scalpTimeframe"] as? String ?: Timeframe.M5.name,
         scalpMinRr = (map["scalpMinRr"] as? Number)?.toDouble() ?: 1.5,
         scalpMaxHoldMinutes = (map["scalpMaxHoldMinutes"] as? Number)?.toInt() ?: 30,
+        breakEvenEnabled = map["breakEvenEnabled"] as? Boolean ?: true,
+        breakEvenTriggerR = (map["breakEvenTriggerR"] as? Number)?.toDouble() ?: 0.8,
+        breakEvenBufferPips = (map["breakEvenBufferPips"] as? Number)?.toDouble() ?: 1.5,
+        trailingStopEnabled = map["trailingStopEnabled"] as? Boolean ?: true,
+        trailingStopTriggerR = (map["trailingStopTriggerR"] as? Number)?.toDouble() ?: 1.2,
+        trailingStopDistanceAtr = (map["trailingStopDistanceAtr"] as? Number)?.toDouble() ?: 1.0,
+        earlyExitOnTrendReversal = map["earlyExitOnTrendReversal"] as? Boolean ?: true,
         xauusdEnabled = map["xauusdEnabled"] as? Boolean ?: true,
         btcusdEnabled = map["btcusdEnabled"] as? Boolean ?: true,
         eurusdEnabled = map["eurusdEnabled"] as? Boolean ?: false,
@@ -132,7 +146,7 @@ object FirestoreMapper {
         updatedAt = (map["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
     )
 
-    fun tradeToMap(trade: Trade): Map<String, Any> = mapOf(
+    fun tradeToMap(trade: Trade): Map<String, Any?> = mapOf(
         "id" to trade.id,
         "brokerOrderId" to trade.brokerOrderId,
         "brokerPositionId" to trade.brokerPositionId,

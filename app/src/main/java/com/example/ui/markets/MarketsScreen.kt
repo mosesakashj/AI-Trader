@@ -380,7 +380,7 @@ fun MarketsScreen() {
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text("EMA Bias", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                    val isBullish = indicators.fastEma > indicators.slowEma
+                                    val isBullish = indicators.emaFast > indicators.emaSlow
                                     Text(
                                         if (isBullish) "BULLISH" else "BEARISH",
                                         style = MaterialTheme.typography.titleMedium,

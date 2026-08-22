@@ -179,6 +179,16 @@ class PaperBrokerAdapter(
         )
     }
 
+    override suspend fun updatePositionSl(positionId: String, newStopLoss: Double, newTakeProfit: Double): Boolean {
+        val position = openPositions[positionId] ?: return false
+        val updated = position.copy(
+            stopLoss = newStopLoss,
+            takeProfit = if (newTakeProfit > 0.0) newTakeProfit else position.takeProfit
+        )
+        openPositions[positionId] = updated
+        return true
+    }
+
     override suspend fun reconcile(): BrokerState {
         return if (connected) {
             BrokerState.Connected(getAccount(), getPositions())
@@ -211,16 +221,30 @@ class PaperBrokerAdapter(
                 unrealizedR = unrealizedR
             )
 
-            // Check Stop Loss & Take Profit triggers
+            // Check Stop Loss & Take Profit triggers with Break-Even and Trailing Stop awareness
             if (pos.direction == TradeDirection.BUY) {
                 if (quote.bid <= pos.stopLoss) {
-                    positionsToClose.add(pos to CloseReason.STOP_LOSS)
+                    val isBreakEven = pos.stopLoss >= (pos.entryPrice - 0.0001)
+                    val isTrailing = pos.stopLoss > (pos.entryPrice + (meta.first * 10.0))
+                    val reason = when {
+                        isTrailing -> CloseReason.TRAILING_STOP
+                        isBreakEven -> CloseReason.BREAK_EVEN
+                        else -> CloseReason.STOP_LOSS
+                    }
+                    positionsToClose.add(pos to reason)
                 } else if (quote.bid >= pos.takeProfit) {
                     positionsToClose.add(pos to CloseReason.TAKE_PROFIT)
                 }
             } else {
                 if (quote.ask >= pos.stopLoss) {
-                    positionsToClose.add(pos to CloseReason.STOP_LOSS)
+                    val isBreakEven = pos.stopLoss <= (pos.entryPrice + 0.0001)
+                    val isTrailing = pos.stopLoss < (pos.entryPrice - (meta.first * 10.0))
+                    val reason = when {
+                        isTrailing -> CloseReason.TRAILING_STOP
+                        isBreakEven -> CloseReason.BREAK_EVEN
+                        else -> CloseReason.STOP_LOSS
+                    }
+                    positionsToClose.add(pos to reason)
                 } else if (quote.ask <= pos.takeProfit) {
                     positionsToClose.add(pos to CloseReason.TAKE_PROFIT)
                 }
@@ -228,7 +252,7 @@ class PaperBrokerAdapter(
         }
 
         positionsToClose.forEach { (pos, reason) ->
-            val exitPrice = if (reason == CloseReason.STOP_LOSS) pos.stopLoss else pos.takeProfit
+            val exitPrice = if (reason == CloseReason.TAKE_PROFIT) pos.takeProfit else pos.stopLoss
             val priceDiff = if (pos.direction == TradeDirection.BUY) exitPrice - pos.entryPrice else pos.entryPrice - exitPrice
             val ticks = priceDiff / meta.first
             val realizedProfit = ticks * meta.second * pos.volume

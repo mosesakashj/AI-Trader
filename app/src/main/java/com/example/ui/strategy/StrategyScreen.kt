@@ -1,4 +1,4 @@
-﻿package com.example.ui.strategy
+package com.example.ui.strategy
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -74,6 +74,15 @@ fun StrategyScreen() {
     var adxMin by remember(config) { mutableStateOf(config?.adxThreshold?.toString() ?: "25.0") }
     var atrSlMultiplier by remember(config) { mutableStateOf(config?.atrSlMultiplier?.toString() ?: "1.5") }
     var rrRatio by remember(config) { mutableStateOf(config?.riskRewardRatio?.toString() ?: "2.0") }
+
+    // Dynamic Trade Protection & Break-Even parameters
+    var breakEvenEnabled by remember(config) { mutableStateOf(config?.breakEvenEnabled ?: true) }
+    var breakEvenTriggerR by remember(config) { mutableStateOf(config?.breakEvenTriggerR?.toString() ?: "0.8") }
+    var breakEvenBufferPips by remember(config) { mutableStateOf(config?.breakEvenBufferPips?.toString() ?: "1.5") }
+    var trailingStopEnabled by remember(config) { mutableStateOf(config?.trailingStopEnabled ?: true) }
+    var trailingStopTriggerR by remember(config) { mutableStateOf(config?.trailingStopTriggerR?.toString() ?: "1.2") }
+    var trailingStopDistanceAtr by remember(config) { mutableStateOf(config?.trailingStopDistanceAtr?.toString() ?: "1.0") }
+    var earlyExitOnTrendReversal by remember(config) { mutableStateOf(config?.earlyExitOnTrendReversal ?: true) }
 
     var saveStatus by remember { mutableStateOf("") }
 
@@ -427,62 +436,202 @@ fun StrategyScreen() {
                         }
                     }
 
+                    HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 4.dp))
+
+                    // Break-Even & Dynamic Trade Protection Section
+                    Text(
+                        "🛡️ Trade Protection & Break-Even Engine",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanLight
+                    )
+                    Text(
+                        "Protects against sudden market reversals and avoids turning winning trades into stop-loss hits.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+
+                    // Auto Break-Even Control
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Auto Break-Even (Risk Free)", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                    Text("Ratchets SL to Entry + Profit Buffer once target profit is reached.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                }
+                                Switch(
+                                    checked = breakEvenEnabled,
+                                    onCheckedChange = { breakEvenEnabled = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = CyanLight, checkedTrackColor = CyanContainer)
+                                )
+                            }
+                            if (breakEvenEnabled) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = breakEvenTriggerR,
+                                        onValueChange = { breakEvenTriggerR = it },
+                                        label = { Text("Trigger Profit (R)") },
+                                        placeholder = { Text("0.8") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    OutlinedTextField(
+                                        value = breakEvenBufferPips,
+                                        onValueChange = { breakEvenBufferPips = it },
+                                        label = { Text("Locked Buffer (Pips)") },
+                                        placeholder = { Text("1.5") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Dynamic Trailing Stop Control
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Dynamic Trailing Stop", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                    Text("Follows market moves by ratcheting SL based on volatility (ATR).", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                }
+                                Switch(
+                                    checked = trailingStopEnabled,
+                                    onCheckedChange = { trailingStopEnabled = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = EmeraldGain, checkedTrackColor = EmeraldContainer)
+                                )
+                            }
+                            if (trailingStopEnabled) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = trailingStopTriggerR,
+                                        onValueChange = { trailingStopTriggerR = it },
+                                        label = { Text("Activation (R)") },
+                                        placeholder = { Text("1.2") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    OutlinedTextField(
+                                        value = trailingStopDistanceAtr,
+                                        onValueChange = { trailingStopDistanceAtr = it },
+                                        label = { Text("Trail Distance (x ATR)") },
+                                        placeholder = { Text("1.0") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Trend Reversal Early Exit Control
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Trend-Reversal Early Exit", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                Text("Exits immediately when EMA flips or momentum engulfing candle opposes position, avoiding full SL loss.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                            }
+                            Switch(
+                                checked = earlyExitOnTrendReversal,
+                                onCheckedChange = { earlyExitOnTrendReversal = it },
+                                colors = SwitchDefaults.colors(checkedThumbColor = GoldHero, checkedTrackColor = GoldContainer)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Button(
                         onClick = {
                             coroutineScope.launch {
                                 val current = repository.getOrCreateConfig()
-                                repository.updateConfig(
-                                    when (strategyType) {
-                                        StrategyType.PULLBACK -> current.copy(
-                                            strategyType = strategyType.name,
-                                            emaFastPeriod = fastEma.toIntOrNull() ?: 20,
-                                            emaSlowPeriod = slowEma.toIntOrNull() ?: 50,
-                                            adxThreshold = adxMin.toDoubleOrNull() ?: 25.0,
-                                            atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
-                                            riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
-                                        )
-                                        StrategyType.BREAKOUT -> current.copy(
-                                            strategyType = strategyType.name,
-                                            breakoutLookbackPeriod = breakoutLookback.toIntOrNull() ?: 20,
-                                            breakoutVolumeMultiplier = breakoutVolumeMult.toDoubleOrNull() ?: 1.5,
-                                            breakoutConfirmCandles = breakoutConfirmCandles.toIntOrNull() ?: 2,
-                                            atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
-                                            riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
-                                        )
-                                        StrategyType.MEAN_REVERSION -> current.copy(
-                                            strategyType = strategyType.name,
-                                            rsiPeriod = rsiPeriod.toIntOrNull() ?: 14,
-                                            rsiOverbought = rsiOverbought.toDoubleOrNull() ?: 70.0,
-                                            rsiOversold = rsiOversold.toDoubleOrNull() ?: 30.0,
-                                            bbPeriod = bbPeriod.toIntOrNull() ?: 20,
-                                            bbStdDev = bbStdDev.toDoubleOrNull() ?: 2.0,
-                                            riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
-                                        )
-                                        StrategyType.MOMENTUM -> current.copy(
-                                            strategyType = strategyType.name,
-                                            macdFastPeriod = macdFast.toIntOrNull() ?: 12,
-                                            macdSlowPeriod = macdSlow.toIntOrNull() ?: 26,
-                                            macdSignalPeriod = macdSignal.toIntOrNull() ?: 9,
-                                            momentumAdxThreshold = momentumAdxThreshold.toDoubleOrNull() ?: 30.0,
-                                            riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
-                                        )
-                                        StrategyType.RANGE_TRADING -> current.copy(
-                                            strategyType = strategyType.name,
-                                            rangeLookbackPeriod = rangeLookback.toIntOrNull() ?: 50,
-                                            rangeMinTouches = rangeMinTouches.toIntOrNull() ?: 2,
-                                            rangeAdxMax = rangeAdxMax.toDoubleOrNull() ?: 20.0,
-                                            riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
-                                        )
-                                        StrategyType.SCALPING -> current.copy(
-                                            strategyType = strategyType.name,
-                                            scalpMinRr = scalpMinRr.toDoubleOrNull() ?: 1.5,
-                                            scalpMaxHoldMinutes = scalpMaxHold.toIntOrNull() ?: 30,
-                                            atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
-                                            riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
-                                        )
-                                    }
+                                val baseUpdated = when (strategyType) {
+                                    StrategyType.PULLBACK -> current.copy(
+                                        strategyType = strategyType.name,
+                                        emaFastPeriod = fastEma.toIntOrNull() ?: 20,
+                                        emaSlowPeriod = slowEma.toIntOrNull() ?: 50,
+                                        adxThreshold = adxMin.toDoubleOrNull() ?: 25.0,
+                                        atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
+                                    )
+                                    StrategyType.BREAKOUT -> current.copy(
+                                        strategyType = strategyType.name,
+                                        breakoutLookbackPeriod = breakoutLookback.toIntOrNull() ?: 20,
+                                        breakoutVolumeMultiplier = breakoutVolumeMult.toDoubleOrNull() ?: 1.5,
+                                        breakoutConfirmCandles = breakoutConfirmCandles.toIntOrNull() ?: 2,
+                                        atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
+                                    )
+                                    StrategyType.MEAN_REVERSION -> current.copy(
+                                        strategyType = strategyType.name,
+                                        rsiPeriod = rsiPeriod.toIntOrNull() ?: 14,
+                                        rsiOverbought = rsiOverbought.toDoubleOrNull() ?: 70.0,
+                                        rsiOversold = rsiOversold.toDoubleOrNull() ?: 30.0,
+                                        bbPeriod = bbPeriod.toIntOrNull() ?: 20,
+                                        bbStdDev = bbStdDev.toDoubleOrNull() ?: 2.0,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
+                                    )
+                                    StrategyType.MOMENTUM -> current.copy(
+                                        strategyType = strategyType.name,
+                                        macdFastPeriod = macdFast.toIntOrNull() ?: 12,
+                                        macdSlowPeriod = macdSlow.toIntOrNull() ?: 26,
+                                        macdSignalPeriod = macdSignal.toIntOrNull() ?: 9,
+                                        momentumAdxThreshold = momentumAdxThreshold.toDoubleOrNull() ?: 30.0,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
+                                    )
+                                    StrategyType.RANGE_TRADING -> current.copy(
+                                        strategyType = strategyType.name,
+                                        rangeLookbackPeriod = rangeLookback.toIntOrNull() ?: 50,
+                                        rangeMinTouches = rangeMinTouches.toIntOrNull() ?: 2,
+                                        rangeAdxMax = rangeAdxMax.toDoubleOrNull() ?: 20.0,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
+                                    )
+                                    StrategyType.SCALPING -> current.copy(
+                                        strategyType = strategyType.name,
+                                        scalpMinRr = scalpMinRr.toDoubleOrNull() ?: 1.5,
+                                        scalpMaxHoldMinutes = scalpMaxHold.toIntOrNull() ?: 30,
+                                        atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0
+                                    )
+                                }
+
+                                val fullConfig = baseUpdated.copy(
+                                    breakEvenEnabled = breakEvenEnabled,
+                                    breakEvenTriggerR = breakEvenTriggerR.toDoubleOrNull() ?: 0.8,
+                                    breakEvenBufferPips = breakEvenBufferPips.toDoubleOrNull() ?: 1.5,
+                                    trailingStopEnabled = trailingStopEnabled,
+                                    trailingStopTriggerR = trailingStopTriggerR.toDoubleOrNull() ?: 1.2,
+                                    trailingStopDistanceAtr = trailingStopDistanceAtr.toDoubleOrNull() ?: 1.0,
+                                    earlyExitOnTrendReversal = earlyExitOnTrendReversal
                                 )
-                                saveStatus = "Parameters updated successfully!"
+
+                                repository.updateConfig(fullConfig)
+                                saveStatus = "Strategy & Trade Protection parameters updated successfully!"
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CyanLight),

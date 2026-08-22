@@ -54,7 +54,7 @@ class IndicatorCalculatorTest {
     @Test
     fun `RSI returns values between 0 and 100`() {
         val candles = makeCandles(30)
-        val rsi = IndicatorCalculator.calculateRsi(candles, 14)
+        val rsi = IndicatorCalculator.calculateRsi(candles.map { it.close }, 14)
         rsi.drop(14).forEach { value ->
             assertTrue("RSI must be in [0,100], was $value", value in 0.0..100.0)
         }
@@ -85,7 +85,7 @@ class IndicatorCalculatorTest {
     }
 
     @Test
-    fun `computeLatest emaFast > emaSlow in uptrend`() {
+    fun `computeLatest emaFast greater than emaSlow in uptrend`() {
         val candles = makeUptrendCandles(60, startPrice = 100.0)
         val result = IndicatorCalculator.computeLatest(candles)
         assertNotNull(result)
@@ -94,7 +94,7 @@ class IndicatorCalculatorTest {
     }
 
     @Test
-    fun `computeLatest emaFast < emaSlow in downtrend`() {
+    fun `computeLatest emaFast less than emaSlow in downtrend`() {
         val candles = makeDowntrendCandles(60, startPrice = 200.0)
         val result = IndicatorCalculator.computeLatest(candles)
         assertNotNull(result)

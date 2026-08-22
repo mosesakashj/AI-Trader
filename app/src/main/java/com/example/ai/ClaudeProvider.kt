@@ -3,23 +3,24 @@ package com.example.ai
 import com.example.security.SecureStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.net.URI
-import java.time.Duration
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 class ClaudeProvider(
-    private val secureStorage: SecureStorage,
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val secureStorage: SecureStorage = SecureStorage(com.example.EdgeTraderApp.instance)
 ) : AiProvider {
 
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(60))
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    private val helper = NvidiaLlmProvider(secureStorage)
 
     override val config: AiProviderConfig
         get() = AiProviderConfig(
@@ -41,17 +42,17 @@ class ClaudeProvider(
                     return@withContext Result.failure(IllegalStateException("Claude API key not configured"))
                 }
 
-                val prompt = buildAnalysisPrompt(request)
+                val prompt = helper.buildAnalysisPrompt(request)
                 val chatRequest = AiChatRequest(
                     messages = listOf(
-                        AiChatMessage("user", "${getSystemPrompt()}\n\n$prompt")
+                        AiChatMessage("user", "${helper.getSystemPrompt()}\n\n$prompt")
                     ),
                     temperature = config.temperature,
                     maxTokens = config.maxTokens
                 )
 
                 val chatResponse = chat(chatRequest).getOrThrow()
-                parseAnalysisResponse(chatResponse.content, request)
+                helper.parseAnalysisResponse(chatResponse.content, request)
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -61,48 +62,59 @@ class ClaudeProvider(
     override suspend fun chat(request: AiChatRequest): Result<AiChatResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                val messages = request.messages.filter { it.role != "system" }.map { msg ->
-                    ClaudeMessage(role = msg.role, content = msg.content)
+                val messagesArray = JSONArray()
+                var systemPrompt = ""
+
+                request.messages.forEach { msg ->
+                    if (msg.role == "system") {
+                        systemPrompt = msg.content
+                    } else {
+                        val obj = JSONObject()
+                        obj.put("role", if (msg.role == "assistant") "assistant" else "user")
+                        obj.put("content", msg.content)
+                        messagesArray.put(obj)
+                    }
                 }
 
-                val systemPrompt = request.messages.firstOrNull { it.role == "system" }?.content
-                    ?: getSystemPrompt()
+                val jsonBody = JSONObject().apply {
+                    put("model", config.model)
+                    put("max_tokens", request.maxTokens)
+                    put("temperature", request.temperature)
+                    if (systemPrompt.isNotBlank()) {
+                        put("system", systemPrompt)
+                    }
+                    put("messages", messagesArray)
+                }
 
-                val requestBody = json.encodeToString(
-                    ClaudeRequest(
-                        model = config.model,
-                        max_tokens = request.maxTokens,
-                        temperature = request.temperature,
-                        system = systemPrompt,
-                        messages = messages
-                    )
-                )
-
-                val httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(config.apiEndpoint))
-                    .timeout(Duration.ofSeconds(config.timeoutSeconds.toLong()))
-                    .header("x-api-key", config.apiKey)
-                    .header("Content-Type", "application/json")
-                    .header("anthropic-version", "2023-06-01")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
+                val httpRequest = Request.Builder()
+                    .url(config.apiEndpoint)
+                    .addHeader("x-api-key", config.apiKey)
+                    .addHeader("anthropic-version", "2023-06-01")
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
                     .build()
 
-                val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString())
+                val response = httpClient.newCall(httpRequest).execute()
+                val responseBodyStr = response.body?.string() ?: ""
 
-                if (response.statusCode() != 200) {
+                if (!response.isSuccessful) {
                     return@withContext Result.failure(
-                        RuntimeException("Claude API error: ${response.statusCode()} - ${response.body()}")
+                        RuntimeException("Claude API error: ${response.code} - $responseBodyStr")
                     )
                 }
 
-                val claudeResponse = json.decodeFromString<ClaudeResponse>(response.body())
-                val content = claudeResponse.content.firstOrNull()?.text ?: ""
-                val tokensUsed = (claudeResponse.usage?.input_tokens ?: 0) + (claudeResponse.usage?.output_tokens ?: 0)
+                val respObj = JSONObject(responseBodyStr)
+                val contentArray = respObj.optJSONArray("content")
+                val text = contentArray?.optJSONObject(0)?.optString("text", "") ?: ""
+                val usage = respObj.optJSONObject("usage")
+                val inTokens = usage?.optInt("input_tokens", 0) ?: 0
+                val outTokens = usage?.optInt("output_tokens", 0) ?: 0
 
                 Result.success(AiChatResponse(
-                    content = content,
+                    content = text,
                     provider = config.name,
-                    tokensUsed = tokensUsed
+                    tokensUsed = inTokens + outTokens
                 ))
             } catch (e: Exception) {
                 Result.failure(e)
@@ -130,51 +142,4 @@ class ClaudeProvider(
             }
         }
     }
-
-    private fun getSystemPrompt(): String = NvidiaLlmProvider().getSystemPrompt()
-
-    private fun buildAnalysisPrompt(request: AiAnalysisRequest): String = NvidiaLlmProvider().buildAnalysisPrompt(request)
-
-    private fun parseAnalysisResponse(content: String, request: AiAnalysisRequest): Result<AiAnalysisResponse> {
-        return NvidiaLlmProvider().parseAnalysisResponse(content, request)
-    }
-
-    @Serializable
-    private data class ClaudeRequest(
-        val model: String,
-        val max_tokens: Int,
-        val temperature: Double,
-        val system: String,
-        val messages: List<ClaudeMessage>
-    )
-
-    @Serializable
-    private data class ClaudeMessage(
-        val role: String,
-        val content: String
-    )
-
-    @Serializable
-    private data class ClaudeResponse(
-        val id: String,
-        val type: String,
-        val role: String,
-        val content: List<ClaudeContent>,
-        val model: String,
-        val stop_reason: String?,
-        val stop_sequence: String?,
-        val usage: ClaudeUsage?
-    )
-
-    @Serializable
-    private data class ClaudeContent(
-        val type: String,
-        val text: String
-    )
-
-    @Serializable
-    private data class ClaudeUsage(
-        val input_tokens: Int,
-        val output_tokens: Int
-    )
 }

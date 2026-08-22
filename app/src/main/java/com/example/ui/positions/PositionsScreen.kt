@@ -19,7 +19,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -35,6 +37,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 @Composable
 fun PositionsScreen() {
@@ -204,9 +207,9 @@ fun PositionsScreen() {
                 val distanceToSL = if (pos.direction == TradeDirection.BUY) pos.currentPrice - pos.stopLoss else pos.stopLoss - pos.currentPrice
                 val distanceToTP = if (pos.direction == TradeDirection.BUY) pos.takeProfit - pos.currentPrice else pos.currentPrice - pos.takeProfit
                 val totalRange = abs(pos.takeProfit - pos.stopLoss)
-                val progressToTP = if (totalRange > 0) ((abs(pos.currentPrice - pos.entryPrice)) / totalRange).coerceIn(0f, 1f) else 0f
-                val slHitPct = if (totalRange > 0) (distanceToSL / totalRange * 100).coerceIn(0f, 100f) else 0f
-                val tpHitPct = if (totalRange > 0) (distanceToTP / totalRange * 100).coerceIn(0f, 100f) else 0f
+                val progressToTP = if (totalRange > 0) ((abs(pos.currentPrice - pos.entryPrice)) / totalRange).toFloat().coerceIn(0f, 1f) else 0f
+                val slHitPct = if (totalRange > 0) (distanceToSL / totalRange * 100).toFloat().coerceIn(0f, 100f) else 0f
+                val tpHitPct = if (totalRange > 0) (distanceToTP / totalRange * 100).toFloat().coerceIn(0f, 100f) else 0f
 
                 // Enhanced analytics
                 val spreadOffset = abs(pos.entryPrice - pos.stopLoss)
@@ -277,15 +280,23 @@ fun PositionsScreen() {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Auto Position Management Badges
+                        val isBeSecured = (pos.direction == TradeDirection.BUY && pos.stopLoss >= (pos.entryPrice - 0.0001)) ||
+                                (pos.direction == TradeDirection.SELL && pos.stopLoss <= (pos.entryPrice + 0.0001))
+                        val isTrailing = (pos.direction == TradeDirection.BUY && pos.stopLoss > (pos.entryPrice + 0.001)) ||
+                                (pos.direction == TradeDirection.SELL && pos.stopLoss < (pos.entryPrice - 0.001))
+
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (pos.unrealizedR >= 1.0) {
-                                Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
-                                    Text("🛡️ Break-Even Locked", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                }
-                            }
-                            if (pos.unrealizedR >= 1.5) {
+                            if (isTrailing) {
                                 Surface(color = CyanContainer, shape = RoundedCornerShape(4.dp)) {
-                                    Text("🎯 Trailing Active", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    Text("🎯 Trailing Active (+${"%.2f".format(pos.unrealizedR)}R)", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            } else if (isBeSecured) {
+                                Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
+                                    Text("🛡️ Break-Even Secured (Risk Free)", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            } else if (pos.unrealizedR >= 0.6) {
+                                Surface(color = GoldContainer, shape = RoundedCornerShape(4.dp)) {
+                                    Text("⚡ BE Approaching (${"%.2f".format(pos.unrealizedR)}R)", style = MaterialTheme.typography.labelSmall, color = GoldHero, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                 }
                             }
                         }
@@ -395,38 +406,26 @@ fun PositionsScreen() {
                             }
                             
                             // Progress bar from SL to TP
-                            val progressFromSL = if (pos.direction == TradeDirection.BUY) {
-                                (pos.currentPrice - pos.stopLoss) / (pos.takeProfit - pos.stopLoss)
+                            val progressFromSL = (if (pos.direction == TradeDirection.BUY) {
+                                if (pos.takeProfit != pos.stopLoss) (pos.currentPrice - pos.stopLoss) / (pos.takeProfit - pos.stopLoss) else 0.5
                             } else {
-                                (pos.stopLoss - pos.currentPrice) / (pos.stopLoss - pos.takeProfit)
-                            }.coerceIn(0f, 1f)
+                                if (pos.stopLoss != pos.takeProfit) (pos.stopLoss - pos.currentPrice) / (pos.stopLoss - pos.takeProfit) else 0.5
+                            }).toFloat().coerceIn(0f, 1f)
                             
-                            Box(modifier = Modifier.fillMaxWidth().height(8.dp)) {
-                                // Background track
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(SurfaceVariantDark)
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
-                                
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(SurfaceVariantDark)
+                            ) {
                                 // Progress from SL to current
                                 Box(
                                     modifier = Modifier
-                                        .width(progressFromSL)
+                                        .fillMaxWidth(progressFromSL)
                                         .fillMaxHeight()
-                                        .background(if (isProfit) EmeraldGain.copy(alpha = 0.4f) else CrimsonLoss.copy(alpha = 0.4f))
+                                        .background(if (isProfit) EmeraldGain.copy(alpha = 0.6f) else CrimsonLoss.copy(alpha = 0.6f))
                                         .clip(RoundedCornerShape(4.dp))
-                                )
-                                
-                                // Current price marker
-                                Box(
-                                    modifier = Modifier
-                                        .width(3.dp)
-                                        .fillMaxHeight()
-                                        .offset(x = (progressFromSL * 100 - 1.5).dp, y = 0.dp)
-                                        .background(if (isProfit) EmeraldGain else CrimsonLoss)
-                                        .clip(RoundedCornerShape(1.5.dp))
                                 )
                             }
                         }
