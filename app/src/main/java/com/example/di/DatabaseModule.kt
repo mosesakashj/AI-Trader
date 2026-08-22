@@ -1,12 +1,9 @@
 package com.example.di
 
-import android.content.Context
-import com.example.data.database.EdgeTraderDatabase
-import com.example.data.dao.*
+import com.example.data.firestore.FirestoreRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -16,31 +13,7 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): EdgeTraderDatabase {
-        return EdgeTraderDatabase.getInstance(context)
+    fun provideFirestoreRepository(): FirestoreRepository {
+        return com.example.EdgeTraderApp.instance.firestoreRepository
     }
-
-    @Provides
-    fun provideBotConfigDao(db: EdgeTraderDatabase): BotConfigDao = db.botConfigDao()
-
-    @Provides
-    fun provideTradeDao(db: EdgeTraderDatabase): TradeDao = db.tradeDao()
-
-    @Provides
-    fun providePositionDao(db: EdgeTraderDatabase): PositionDao = db.positionDao()
-
-    @Provides
-    fun provideSignalDao(db: EdgeTraderDatabase): SignalDao = db.signalDao()
-
-    @Provides
-    fun provideCandleDao(db: EdgeTraderDatabase): CandleDao = db.candleDao()
-
-    @Provides
-    fun provideSystemEventDao(db: EdgeTraderDatabase): SystemEventDao = db.systemEventDao()
-
-    @Provides
-    fun provideHeartbeatDao(db: EdgeTraderDatabase): HeartbeatDao = db.heartbeatDao()
-
-    @Provides
-    fun provideWatchlistDao(db: EdgeTraderDatabase): WatchlistDao = db.watchlistDao()
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.example.EdgeTraderApp
 import com.example.ai.AiManager
 import com.example.ai.AiProviderType
+import com.example.auth.AuthState
 import com.example.domain.model.AssetType
 import com.example.domain.model.TradingMode
 import com.example.notifications.TelegramNotifier
@@ -33,6 +34,8 @@ fun SettingsScreen(
 ) {
     val repository = EdgeTraderApp.instance.firestoreRepository
     val secureStorage = EdgeTraderApp.instance.secureStorage
+    val authManager = EdgeTraderApp.instance.authManager
+    val authState by authManager.authState.collectAsState()
     val config by repository.configFlow.collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()
 
@@ -130,6 +133,83 @@ fun SettingsScreen(
         contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Account Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            color = PrimaryBlueContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Person, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Account", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            when (val state = authState) {
+                                is AuthState.SignedIn -> Text("Signed in as ${state.displayName}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                else -> Text("Using local device storage", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            }
+                        }
+                    }
+
+                    when (val state = authState) {
+                        is AuthState.SignedIn -> {
+                            Surface(
+                                color = SurfaceVariantDark,
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(state.displayName, fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                        Text(state.email, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                    }
+                                    Button(
+                                        onClick = { authManager.signOut() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Sign Out", fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            Surface(
+                                color = GoldContainer,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.CloudOff, contentDescription = null, tint = GoldHero, modifier = Modifier.size(18.dp))
+                                    Text(
+                                        "Data is stored only on this device. Sign in with Google to sync across devices.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = GoldHero
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Mode Selector Card
         item {
             Card(
