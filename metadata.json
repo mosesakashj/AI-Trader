@@ -1,0 +1,6 @@
+{
+  "name": "EdgeTrader",
+  "description": "Pure Android on-device algorithmic trading engine with rule-based EMA/ADX/ATR strategy, risk management, watchdog, paper broker, and local backtesting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

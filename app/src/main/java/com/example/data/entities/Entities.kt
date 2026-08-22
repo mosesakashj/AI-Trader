@@ -1,0 +1,158 @@
+package com.example.data.entities
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+import com.example.domain.model.*
+
+@Entity(tableName = "bot_config")
+data class BotConfigEntity(
+    @PrimaryKey val id: String = "primary_config",
+    val mode: String = TradingMode.PAPER.name,
+    val isBotEnabled: Boolean = false,
+    val emergencyStop: Boolean = false,
+    val safeMode: Boolean = false,
+    val safeModeReason: String = "",
+    val defaultRiskPercent: Double = 0.25,
+    val maxDailyLossPercent: Double = 1.0,
+    val maxConsecutiveLosses: Int = 3,
+    val maxOpenPositions: Int = 1,
+    val emaFastPeriod: Int = 20,
+    val emaSlowPeriod: Int = 50,
+    val adxPeriod: Int = 14,
+    val adxThreshold: Double = 25.0,
+    val atrPeriod: Int = 14,
+    val atrSlMultiplier: Double = 1.5,
+    val riskRewardRatio: Double = 2.0,
+    val xauusdEnabled: Boolean = true,
+    val btcusdEnabled: Boolean = true,
+    val telegramEnabled: Boolean = false,
+    val telegramChatId: String = "",
+    val strategyVersion: String = "1.0.0",
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "trades")
+data class TradeEntity(
+    @PrimaryKey val id: String,
+    val brokerOrderId: String,
+    val brokerPositionId: String,
+    val symbol: String,
+    val direction: String,
+    val volume: Double,
+    val entryPrice: Double,
+    val stopLoss: Double,
+    val takeProfit: Double,
+    val riskAmount: Double,
+    val riskPercent: Double,
+    val rr: Double,
+    val openedAt: Long,
+    val closedAt: Long?,
+    val closePrice: Double?,
+    val profit: Double,
+    val profitR: Double,
+    val status: String,
+    val closeReason: String?,
+    val strategyVersion: String,
+    val mode: String,
+    val slippage: Double
+)
+
+@Entity(tableName = "positions")
+data class PositionEntity(
+    @PrimaryKey val id: String,
+    val symbol: String,
+    val direction: String,
+    val volume: Double,
+    val entryPrice: Double,
+    val currentPrice: Double,
+    val stopLoss: Double,
+    val takeProfit: Double,
+    val unrealizedProfit: Double,
+    val unrealizedR: Double,
+    val openedAt: Long,
+    val mode: String
+)
+
+@Entity(tableName = "signals")
+data class SignalEntity(
+    @PrimaryKey val id: String,
+    val symbol: String,
+    val direction: String,
+    val price: Double,
+    val stopLoss: Double,
+    val takeProfit: Double,
+    val rrRatio: Double,
+    val candleTime: Long,
+    val timestamp: Long,
+    val decision: String,
+    val reason: String,
+    val emaFast: Double,
+    val emaSlow: Double,
+    val adx: Double,
+    val atr: Double,
+    val strategyVersion: String
+)
+
+@Entity(tableName = "candles", primaryKeys = ["symbol", "timeframe", "openTime"])
+data class CandleEntity(
+    val symbol: String,
+    val timeframe: String,
+    val openTime: Long,
+    val open: Double,
+    val high: Double,
+    val low: Double,
+    val close: Double,
+    val volume: Double,
+    val isClosed: Boolean
+)
+
+@Entity(tableName = "strategy_executions")
+data class StrategyExecutionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val symbol: String,
+    val decision: String,
+    val details: String,
+    val correlationId: String
+)
+
+@Entity(tableName = "risk_events")
+data class RiskEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val eventType: String,
+    val message: String,
+    val severity: String
+)
+
+@Entity(tableName = "system_events")
+data class SystemEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val level: String,
+    val component: String,
+    val event: String,
+    val correlationId: String,
+    val symbol: String?,
+    val message: String
+)
+
+@Entity(tableName = "heartbeats")
+data class HeartbeatEntity(
+    @PrimaryKey val component: String,
+    val timestamp: Long,
+    val status: String,
+    val details: String = ""
+)
+
+@Entity(tableName = "performance_snapshots")
+data class PerformanceSnapshotEntity(
+    @PrimaryKey val date: String,
+    val startingBalance: Double,
+    val endingBalance: Double,
+    val dailyProfit: Double,
+    val tradesCount: Int,
+    val winCount: Int,
+    val lossCount: Int,
+    val maxDrawdownPercent: Double
+)

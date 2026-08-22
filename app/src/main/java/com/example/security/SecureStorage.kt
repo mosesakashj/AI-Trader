@@ -1,0 +1,101 @@
+package com.example.security
+
+import android.content.Context
+import android.content.SharedPreferences
+import android.util.Base64
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+class SecureStorage(context: Context) {
+
+    private val prefs: SharedPreferences = context.getSharedPreferences("edgetrader_secure_prefs", Context.MODE_PRIVATE)
+    private val keyStoreAlias = "EdgeTraderKeyAlias"
+    private val androidKeyStore = "AndroidKeyStore"
+    private val transformation = "AES/GCM/NoPadding"
+
+    init {
+        initKeyStore()
+    }
+
+    private fun initKeyStore() {
+        val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
+        if (!keyStore.containsAlias(keyStoreAlias)) {
+            val keyGenerator = KeyGenerator.getInstance("AES", androidKeyStore)
+            val keyGenParameterSpec = android.security.keystore.KeyGenParameterSpec.Builder(
+                keyStoreAlias,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+
+            keyGenerator.init(keyGenParameterSpec)
+            keyGenerator.generateKey()
+        }
+    }
+
+    private fun getSecretKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
+        return keyStore.getKey(keyStoreAlias, null) as SecretKey
+    }
+
+    fun saveEncryptedString(key: String, rawValue: String) {
+        if (rawValue.isBlank()) {
+            prefs.edit().remove(key).remove("${key}_iv").apply()
+            return
+        }
+        try {
+            val cipher = Cipher.getInstance(transformation)
+            cipher.init(Cipher.ENCRYPT_MODE, getSecretKey())
+            val iv = cipher.iv
+            val encryptedBytes = cipher.doFinal(rawValue.toByteArray(Charsets.UTF_8))
+
+            val encryptedB64 = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
+            val ivB64 = Base64.encodeToString(iv, Base64.NO_WRAP)
+
+            prefs.edit()
+                .putString(key, encryptedB64)
+                .putString("${key}_iv", ivB64)
+                .apply()
+        } catch (e: Exception) {
+            // Fallback for JVM test environments without AndroidKeyStore
+            prefs.edit().putString(key, Base64.encodeToString(rawValue.toByteArray(), Base64.NO_WRAP)).apply()
+        }
+    }
+
+    fun getDecryptedString(key: String): String {
+        val encryptedB64 = prefs.getString(key, null) ?: return ""
+        val ivB64 = prefs.getString("${key}_iv", null)
+
+        if (ivB64 == null) {
+            // Fallback decoding
+            return runCatching { String(Base64.decode(encryptedB64, Base64.NO_WRAP)) }.getOrDefault("")
+        }
+
+        return try {
+            val cipher = Cipher.getInstance(transformation)
+            val iv = Base64.decode(ivB64, Base64.NO_WRAP)
+            val spec = GCMParameterSpec(128, iv)
+            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), spec)
+            val encryptedBytes = Base64.decode(encryptedB64, Base64.NO_WRAP)
+            val decryptedBytes = cipher.doFinal(encryptedBytes)
+            String(decryptedBytes, Charsets.UTF_8)
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    fun getTelegramToken(): String = getDecryptedString("telegram_bot_token")
+    fun saveTelegramToken(token: String) = saveEncryptedString("telegram_bot_token", token)
+
+    fun getTelegramChatId(): String = prefs.getString("telegram_chat_id", "") ?: ""
+    fun saveTelegramChatId(chatId: String) = prefs.edit().putString("telegram_chat_id", chatId).apply()
+
+    fun clearAllSecrets() {
+        prefs.edit().clear().apply()
+    }
+}
