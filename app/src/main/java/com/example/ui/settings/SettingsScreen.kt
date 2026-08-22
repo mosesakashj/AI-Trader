@@ -833,78 +833,66 @@ fun SettingsScreen(
                         }
                     }
 
-                    if (selectedProviderId == AiProviderType.NVIDIA) {
-                        HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 4.dp))
-                        
-                        Text("NVIDIA Nemotron 3 Ultra Configuration", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                        
-                        OutlinedTextField(
-                            value = nvidiaApiKey,
-                            onValueChange = { nvidiaApiKey = it },
-                            label = { Text("NVIDIA API Key") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            placeholder = { Text("nvapi-xxxxxxxxxxxxxxxxxxxxxxxx") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().testTag("nvidia_api_key_input"),
-                            isError = nvidiaApiKey.isNotBlank() && !nvidiaApiKey.startsWith("nvapi-")
+if (selectedProviderId == AiProviderType.NVIDIA) {
+                        renderProviderConfig(
+                            providerName = "NVIDIA Nemotron 3 Ultra",
+                            apiKey = nvidiaApiKey,
+                            onApiKeyChange = { nvidiaApiKey = it },
+                            keyPrefix = "nvapi-",
+                            saveAction = { secureStorage.saveNvidiaApiKey(nvidiaApiKey) },
+                            testProviderId = AiProviderType.NVIDIA,
+                            aiManager = aiManager,
+                            coroutineScope = coroutineScope,
+                            aiTestResult = aiTestResult,
+                            isTestingAi = isTestingAi,
+                            onTestResultChange = { aiTestResult = it },
+                            onTestingChange = { isTestingAi = it }
                         )
-                        
-                        if (nvidiaApiKey.isNotBlank() && !nvidiaApiKey.startsWith("nvapi-")) {
-                            Text("API key should start with 'nvapi-'", style = MaterialTheme.typography.labelSmall, color = CrimsonLoss)
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(
-                                onClick = {
-                                    secureStorage.saveNvidiaApiKey(nvidiaApiKey)
-                                    aiManager.refreshProviders()
-                                    aiTestResult = "✅ NVIDIA API key saved! Provider list refreshed."
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f).testTag("save_nvidia_btn")
-                            ) {
-                                Text("Save API Key", fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    isTestingAi = true
-                                    secureStorage.saveNvidiaApiKey(nvidiaApiKey)
-                                    aiManager.refreshProviders()
-                                    
-                                    coroutineScope.launch {
-                                        val provider = aiManager.providers.value.firstOrNull { it.config.id == AiProviderType.NVIDIA }
-                                        provider?.testConnection()?.onSuccess { msg ->
-                                            aiTestResult = "✅ $msg"
-                                        }?.onFailure { e ->
-                                            aiTestResult = "❌ Connection failed: ${e.message}"
-                                        }
-                                        isTestingAi = false
-                                    }
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f).testTag("test_nvidia_btn")
-                            ) {
-                                if (isTestingAi) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PrimaryBlue, strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Testing...", color = PrimaryBlue)
-                                } else {
-                                    Icon(Icons.Default.Link, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Test Connection", color = PrimaryBlue)
-                                }
-                            }
-                        }
-
-                        if (aiTestResult != null) {
-                            Text(
-                                aiTestResult!!,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (aiTestResult!!.startsWith("✅")) EmeraldGain else CrimsonLoss
-                            )
-                        }
+                    } else if (selectedProviderId == AiProviderType.GEMINI) {
+                        renderProviderConfig(
+                            providerName = "Google Gemini Pro",
+                            apiKey = geminiApiKey,
+                            onApiKeyChange = { geminiApiKey = it },
+                            keyPrefix = "AIza",
+                            saveAction = { secureStorage.saveGeminiApiKey(geminiApiKey) },
+                            testProviderId = AiProviderType.GEMINI,
+                            aiManager = aiManager,
+                            coroutineScope = coroutineScope,
+                            aiTestResult = aiTestResult,
+                            isTestingAi = isTestingAi,
+                            onTestResultChange = { aiTestResult = it },
+                            onTestingChange = { isTestingAi = it }
+                        )
+                    } else if (selectedProviderId == AiProviderType.CLAUDE) {
+                        renderProviderConfig(
+                            providerName = "Anthropic Claude 3.5 Sonnet",
+                            apiKey = claudeApiKey,
+                            onApiKeyChange = { claudeApiKey = it },
+                            keyPrefix = "sk-ant-",
+                            saveAction = { secureStorage.saveClaudeApiKey(claudeApiKey) },
+                            testProviderId = AiProviderType.CLAUDE,
+                            aiManager = aiManager,
+                            coroutineScope = coroutineScope,
+                            aiTestResult = aiTestResult,
+                            isTestingAi = isTestingAi,
+                            onTestResultChange = { aiTestResult = it },
+                            onTestingChange = { isTestingAi = it }
+                        )
+                    } else if (selectedProviderId == AiProviderType.CHATGPT) {
+                        renderProviderConfig(
+                            providerName = "OpenAI GPT-4o",
+                            apiKey = chatGptApiKey,
+                            onApiKeyChange = { chatGptApiKey = it },
+                            keyPrefix = "sk-",
+                            saveAction = { secureStorage.saveChatGptApiKey(chatGptApiKey) },
+                            testProviderId = AiProviderType.CHATGPT,
+                            aiManager = aiManager,
+                            coroutineScope = coroutineScope,
+                            aiTestResult = aiTestResult,
+                            isTestingAi = isTestingAi,
+                            onTestResultChange = { aiTestResult = it },
+                            onTestingChange = { isTestingAi = it }
+                        )
                     }
 
                     // AI Analysis Test Section
