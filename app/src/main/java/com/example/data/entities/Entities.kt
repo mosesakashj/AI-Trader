@@ -75,9 +75,8 @@ data class BotConfigEntity(
     val updatedAt: Long = System.currentTimeMillis()
 )
 
-@Entity(tableName = "trades")
 data class TradeEntity(
-    @PrimaryKey val id: String,
+    val id: String,
     val brokerOrderId: String,
     val brokerPositionId: String,
     val symbol: String,
@@ -101,9 +100,8 @@ data class TradeEntity(
     val slippage: Double
 )
 
-@Entity(tableName = "positions")
 data class PositionEntity(
-    @PrimaryKey val id: String,
+    val id: String,
     val symbol: String,
     val direction: String,
     val volume: Double,
@@ -117,9 +115,8 @@ data class PositionEntity(
     val mode: String
 )
 
-@Entity(tableName = "signals")
 data class SignalEntity(
-    @PrimaryKey val id: String,
+    val id: String,
     val symbol: String,
     val direction: String,
     val price: Double,
@@ -137,7 +134,6 @@ data class SignalEntity(
     val strategyVersion: String
 )
 
-@Entity(tableName = "candles", primaryKeys = ["symbol", "timeframe", "openTime"])
 data class CandleEntity(
     val symbol: String,
     val timeframe: String,
@@ -150,9 +146,8 @@ data class CandleEntity(
     val isClosed: Boolean
 )
 
-@Entity(tableName = "system_events")
 data class SystemEventEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val id: Long = 0,
     val timestamp: Long,
     val level: String,
     val component: String,
@@ -162,9 +157,8 @@ data class SystemEventEntity(
     val message: String
 )
 
-@Entity(tableName = "heartbeats")
 data class HeartbeatEntity(
-    @PrimaryKey val component: String,
+    val component: String,
     val timestamp: Long,
     val status: String,
     val details: String = ""
