@@ -2,8 +2,12 @@ package com.example.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -18,9 +22,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.domain.model.StateMachineState
-import com.example.domain.model.TradeDirection
-import com.example.domain.model.TradingMode
+import com.example.broker.MarketScheduleUtils
+import com.example.domain.model.*
 import com.example.ui.components.*
 import com.example.ui.theme.*
 
@@ -42,9 +45,19 @@ fun DashboardScreen(
 
     var showEmergencyDialog by remember { mutableStateOf(false) }
     var showCloseAllDialog by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf("ALL") }
 
     val mode = runCatching { TradingMode.valueOf(config?.mode ?: "PAPER") }.getOrDefault(TradingMode.PAPER)
     val isBotRunning = config?.isBotEnabled == true && config?.emergencyStop == false
+
+    val filteredSymbols = remember(selectedCategory) {
+        when (selectedCategory) {
+            "CRYPTO" -> SymbolCatalog.getByAssetType(AssetType.CRYPTO)
+            "FOREX" -> SymbolCatalog.getByAssetType(AssetType.FOREX)
+            "COMMODITIES" -> SymbolCatalog.getByAssetType(AssetType.COMMODITY)
+            else -> SymbolCatalog.ALL_SYMBOLS
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -139,62 +152,67 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(Icons.Default.Warning, contentDescription = null, tint = CrimsonLoss)
-                            Text("SAFE MODE ACTIVE", fontWeight = FontWeight.Bold, color = CrimsonLoss)
+                            Text(
+                                text = "SAFE MODE ACTIVE",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = CrimsonLoss
+                            )
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = config?.safeModeReason.takeIf { !it.isNullOrBlank() } ?: "System discrepancy detected. New trades blocked.",
+                            text = config?.safeModeReason ?: "Automated safety circuit tripped.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = CrimsonDark
+                            color = TextPrimary
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Button(
                             onClick = { viewModel.resetSafeMode() },
-                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
-                            modifier = Modifier.fillMaxWidth().testTag("reset_safe_mode_btn")
+                            colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.testTag("reset_safe_mode_btn")
                         ) {
-                            Text("Acknowledge & Clear Safe Mode", color = PrimaryBlue, fontWeight = FontWeight.SemiBold)
+                            Text("Reset Safe Mode", style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
             }
         }
 
-        // 2. Financial Metrics Grid
+        // 2. Account & Financial Overview Grid
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                val pnlPercentage = if (accountInfo.balance > 0) (dailyPnl / accountInfo.balance) * 100.0 else 0.0
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                Text(
+                    text = "Account Capital & Risk",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     MetricCard(
-                        title = "Account Equity",
+                        title = "Equity",
                         value = "$${"%.2f".format(accountInfo.equity)}",
                         subtitle = "Balance: $${"%.2f".format(accountInfo.balance)}",
-                        valueColor = CyanLight,
-                        modifier = Modifier.weight(1f),
-                        testTag = "equity_metric_card"
+                        modifier = Modifier.weight(1f)
                     )
-                    MetricCard(
-                        title = "Today's P/L",
-                        value = "${if (dailyPnl >= 0) "+" else ""}$${"%.2f".format(dailyPnl)}",
-                        subtitle = "${if (dailyPnl >= 0) "+" else ""}${"%.2f".format(pnlPercentage)}%",
-                        valueColor = if (dailyPnl >= 0) EmeraldGain else CrimsonLoss,
-                        modifier = Modifier.weight(1f),
-                        testTag = "daily_pnl_metric_card"
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
                     MetricCard(
                         title = "Free Margin",
                         value = "$${"%.2f".format(accountInfo.freeMargin)}",
-                        subtitle = "Used: $${"%.2f".format(accountInfo.margin)}",
-                        valueColor = TextPrimary,
+                        subtitle = "Margin: $${"%.2f".format(accountInfo.margin)}",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val pnl = dailyPnl
+                    val isPositive = pnl >= 0
+                    MetricCard(
+                        title = "Today P/L",
+                        value = "${if (isPositive) "+" else ""}$${"%.2f".format(pnl)}",
+                        subtitle = if (isPositive) "Profitable session" else "Within daily risk limits",
+                        valueColor = if (isPositive) EmeraldGain else CrimsonLoss,
+                        isPositive = isPositive,
                         modifier = Modifier.weight(1f)
                     )
                     MetricCard(
@@ -208,7 +226,7 @@ fun DashboardScreen(
             }
         }
 
-        // 3. Live Markets Feed Cards
+        // 3. Multi-Pair Live Watchlist
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -217,126 +235,123 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Live Tickers",
+                        text = "Multi-Pair Watchlist (${filteredSymbols.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
                     )
                     TextButton(onClick = onNavigateToMarkets) {
-                        Text("View Charts", color = CyanLight, style = MaterialTheme.typography.bodySmall)
+                        Text("Interactive Charts", color = CyanLight, style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
-                // XAUUSD Card
-                val xau = quotes["XAUUSD"]
-                val xauSession = com.example.broker.MarketScheduleUtils.getMarketSession("XAUUSD")
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, CardBorderDark),
-                    modifier = Modifier.fillMaxWidth().testTag("xauusd_quote_card")
+                // Category Filter Chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                    listOf("ALL" to "All Pairs", "CRYPTO" to "Crypto (3)", "FOREX" to "Forex (3)", "COMMODITIES" to "Metals & Oil (2)").forEach { (cat, label) ->
+                        val isSelected = selectedCategory == cat
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryBlueContainer,
+                                selectedLabelColor = PrimaryBlue,
+                                containerColor = SurfaceDark,
+                                labelColor = TextSecondary
+                            ),
+                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorderDark),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("filter_$cat")
+                        )
+                    }
+                }
+            }
+        }
+
+        // Watchlist Items
+        items(filteredSymbols) { symConfig ->
+            val quote = quotes[symConfig.symbol]
+            val session = MarketScheduleUtils.getMarketSession(symConfig.symbol)
+            val isEnabled = viewModel.engine.isSymbolEnabled(symConfig.symbol)
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToMarkets() }
+                    .testTag("quote_card_${symConfig.symbol}")
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Column {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("XAUUSD", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = GoldHero)
+                                    Text(
+                                        symConfig.symbol,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = when (symConfig.assetType) {
+                                            AssetType.CRYPTO -> CyanLight
+                                            AssetType.COMMODITY -> GoldHero
+                                            AssetType.FOREX -> EmeraldGain
+                                            else -> TextPrimary
+                                        }
+                                    )
                                     Surface(
-                                        color = if (xauSession.isOpen) EmeraldContainer else GoldContainer,
+                                        color = if (session.isOpen) EmeraldContainer else GoldContainer,
                                         shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Text(
-                                            if (xauSession.isOpen) "Open" else "Weekend Close",
+                                            session.statusLabel,
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (xauSession.isOpen) EmeraldDark else GoldHero,
+                                            color = if (session.isOpen) EmeraldDark else GoldHero,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = if (xauSession.isOpen) "Spread: ${xau?.spread?.let { "%.2f".format(it) } ?: "--"} ($0.01 tick)" else "Friday Spot Close (Reopens Sun 22:00 UTC)",
+                                    text = "${symConfig.displayName} • Spread: ${quote?.spread?.let { SymbolCatalog.formatPrice(symConfig.symbol, it) } ?: "--"}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = TextMuted
-                                )
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = xau?.ask?.let { "$%.2f".format(it) } ?: "Syncing...",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(
-                                    text = xau?.bid?.let { "Bid: $%.2f".format(it) } ?: "Connecting...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary,
-                                    fontFamily = FontFamily.Monospace
                                 )
                             }
                         }
-                    }
-                }
 
-                // BTCUSD Card
-                val btc = quotes["BTCUSD"]
-                val btcSession = com.example.broker.MarketScheduleUtils.getMarketSession("BTCUSD")
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, CardBorderDark),
-                    modifier = Modifier.fillMaxWidth().testTag("btcusd_quote_card")
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("BTCUSD", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = CyanLight)
-                                    Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
-                                        Text("Live 24/7", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Spread: ${btc?.spread?.let { "$%.1f".format(it) } ?: "--"} (Real-Time Feed)",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextMuted
-                                )
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = btc?.ask?.let { "$%.1f".format(it) } ?: "Syncing...",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(
-                                    text = btc?.bid?.let { "Bid: $%.1f".format(it) } ?: "Connecting...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
+                        Column(horizontalAlignment = Alignment.End) {
+                            val askVal = quote?.ask ?: SymbolCatalog.getInitialQuote(symConfig.symbol).ask
+                            val bidVal = quote?.bid ?: SymbolCatalog.getInitialQuote(symConfig.symbol).bid
+                            Text(
+                                text = SymbolCatalog.formatPrice(symConfig.symbol, askVal),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "Bid: ${SymbolCatalog.formatPrice(symConfig.symbol, bidVal)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                                fontFamily = FontFamily.Monospace
+                            )
                         }
                     }
                 }
             }
         }
 
-        // 4. Open Positions Section
+        // 4. Open Positions Section (with 1-tap close and auto BE/Trailing indicators)
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -345,7 +360,7 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Active Positions (${openPositions.size})",
+                        text = "Auto-Managed Positions (${openPositions.size})",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
@@ -378,7 +393,7 @@ fun DashboardScreen(
                                 Icon(Icons.Default.Inbox, contentDescription = null, tint = TextMuted, modifier = Modifier.size(32.dp))
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("No open positions", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                                Text("Engine is scanning closed M15 candles", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                                Text("Engine is scanning closed M15 candles across all 8 pairs", color = TextMuted, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -430,15 +445,43 @@ fun DashboardScreen(
                                     }
                                 }
 
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Auto Position Management Badges
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (pos.unrealizedR >= 1.0) {
+                                        Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
+                                            Text("🛡️ Break-Even Secured", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    if (pos.unrealizedR >= 1.5) {
+                                        Surface(color = CyanContainer, shape = RoundedCornerShape(4.dp)) {
+                                            Text("🎯 Trailing Active", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                }
+
                                 HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 10.dp))
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Entry: ${pos.entryPrice}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                                    Text("SL: ${pos.stopLoss}", style = MaterialTheme.typography.bodySmall, color = CrimsonLoss)
-                                    Text("TP: ${pos.takeProfit}", style = MaterialTheme.typography.bodySmall, color = EmeraldGain)
+                                    Column {
+                                        Text("Entry: ${SymbolCatalog.formatPrice(pos.symbol, pos.entryPrice)}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                        Text("SL: ${SymbolCatalog.formatPrice(pos.symbol, pos.stopLoss)} • TP: ${SymbolCatalog.formatPrice(pos.symbol, pos.takeProfit)}", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                    }
+
+                                    Button(
+                                        onClick = { viewModel.closeSinglePosition(pos.id) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceVariantDark),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("close_pos_btn_${pos.id}")
+                                    ) {
+                                        Text("Close", color = CrimsonLoss, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -447,119 +490,118 @@ fun DashboardScreen(
             }
         }
 
-        // 5. Strategy & Signal Explainability Card
+        // 5. Live Explainability Signal Card
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Strategy Explainability",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    TextButton(onClick = onNavigateToStrategy) {
-                        Text("Tuner", color = CyanLight, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, CardBorderDark),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        val signal = latestSignal
-                        if (signal != null) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Latest: ${signal.symbol} ${signal.direction} @ ${signal.price}",
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Surface(
-                                    color = if (signal.explanation.isAllPassed) EmeraldContainer else GoldContainer,
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = signal.explanation.decision,
-                                        color = if (signal.explanation.isAllPassed) EmeraldDark else GoldHero,
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = "Indicators: EMA20: ${"%.2f".format(signal.explanation.emaFast)} | EMA50: ${"%.2f".format(signal.explanation.emaSlow)} | ADX: ${"%.1f".format(signal.explanation.adx)} | ATR: ${"%.2f".format(signal.explanation.atr)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = CyanLight,
-                                fontFamily = FontFamily.Monospace
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("14-Factor Verification Checklist:", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FactorChip("Trend", signal.explanation.trendCheck)
-                                FactorChip("ADX", signal.explanation.adxCheck)
-                                FactorChip("Pullback", signal.explanation.pullbackCheck)
-                                FactorChip("Candle", signal.explanation.candleCheck)
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FactorChip("Spread", signal.explanation.spreadCheck)
-                                FactorChip("Risk Limits", signal.explanation.riskCheck)
-                                FactorChip("Session", signal.explanation.sessionCheck)
-                            }
-                        } else {
-                            Text(
-                                "Conservative EMA20/EMA50 + ADX(14) + ATR(14) strategy engine running. Awaiting completed candle setup.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary
-                            )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth().testTag("dashboard_signal_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Latest Strategy Audit",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        TextButton(onClick = onNavigateToStrategy) {
+                            Text("Tuner", color = CyanLight, style = MaterialTheme.typography.bodySmall)
                         }
+                    }
+
+                    val sig = latestSignal
+                    if (sig != null) {
+                        val exp = sig.explanation
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Evaluated ${sig.symbol} (${sig.direction}): ${sig.decision}",
+                            fontWeight = FontWeight.Bold,
+                            color = if (sig.decision == SignalDecision.GO) EmeraldGain else GoldHero
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = sig.reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+
+                        if (exp != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                FactorChip("EMA Trend Alignment", exp.trendCheck, Modifier.fillMaxWidth())
+                                FactorChip("ADX Momentum (>= ${config?.adxThreshold})", exp.adxCheck, Modifier.fillMaxWidth())
+                                FactorChip("Pullback to EMA Band", exp.pullbackCheck, Modifier.fillMaxWidth())
+                                FactorChip("Closed Bar Confirmation", exp.candleCheck, Modifier.fillMaxWidth())
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Waiting for closed M15 candle formation...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
                     }
                 }
             }
         }
     }
 
+    // Emergency Confirmation Dialog
     if (showEmergencyDialog) {
-        EmergencyStopDialog(
-            onConfirm = {
-                viewModel.triggerEmergencyStop()
-                showEmergencyDialog = false
+        AlertDialog(
+            onDismissRequest = { showEmergencyDialog = false },
+            title = { Text("Activate Emergency Stop?", fontWeight = FontWeight.Bold, color = CrimsonLoss) },
+            text = { Text("This will immediately disable automated trading and protect open balance.", color = TextPrimary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.triggerEmergencyStop()
+                        showEmergencyDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss)
+                ) {
+                    Text("YES, EMERGENCY STOP", color = Color.White, fontWeight = FontWeight.Bold)
+                }
             },
-            onDismiss = { showEmergencyDialog = false }
+            dismissButton = {
+                OutlinedButton(onClick = { showEmergencyDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = SurfaceDark
         )
     }
 
+    // Close All Confirmation Dialog
     if (showCloseAllDialog) {
-        CloseAllPositionsDialog(
-            positionCount = openPositions.size,
-            onConfirm = {
-                viewModel.closeAllPositions()
-                showCloseAllDialog = false
+        AlertDialog(
+            onDismissRequest = { showCloseAllDialog = false },
+            title = { Text("Close All Positions?", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = { Text("This will instantly send market orders to close all open positions across all pairs.", color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.closeAllPositions()
+                        showCloseAllDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss)
+                ) {
+                    Text("Close All", color = Color.White, fontWeight = FontWeight.Bold)
+                }
             },
-            onDismiss = { showCloseAllDialog = false }
+            dismissButton = {
+                OutlinedButton(onClick = { showCloseAllDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = SurfaceDark
         )
     }
 }

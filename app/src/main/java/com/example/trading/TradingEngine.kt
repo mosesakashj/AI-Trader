@@ -39,7 +39,9 @@ class TradingEngine(
     )
     val currentAccount: StateFlow<AccountInfo> = _currentAccount.asStateFlow()
 
-    private val _activeQuotes = MutableStateFlow<Map<String, Quote>>(emptyMap())
+    private val _activeQuotes = MutableStateFlow<Map<String, Quote>>(
+        SymbolCatalog.ALL_SYMBOLS.associate { it.symbol to SymbolCatalog.getInitialQuote(it.symbol) }
+    )
     val activeQuotes: StateFlow<Map<String, Quote>> = _activeQuotes.asStateFlow()
 
     private val _latestSignal = MutableStateFlow<Signal?>(null)
@@ -51,252 +53,13 @@ class TradingEngine(
     private val _consecutiveLosses = MutableStateFlow(0)
     val consecutiveLosses: StateFlow<Int> = _consecutiveLosses.asStateFlow()
 
+    private var quoteStreamJob: Job? = null
+
     private var activeBroker: BrokerAdapter = brokerFactory(TradingMode.PAPER)
     private var positionReconciler = PositionReconciler(repository, activeBroker)
 
     private val symbolConfigs = ConcurrentHashMap<String, SymbolConfig>().apply {
-        put(
-            "XAUUSD",
-            SymbolConfig(
-                symbol = "XAUUSD",
-                displayName = "Gold (Spot)",
-                brokerSymbol = "XAUUSD",
-                assetType = AssetType.COMMODITY,
-                digits = 2,
-                contractSize = 100.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.01,
-                tickValue = 1.0,
-                minimumStopDistance = 0.50,
-                spreadLimit = 0.60,
-                minimumAtr = 0.5,
-                maximumAtr = 25.0
-            )
-        )
-        put(
-            "BTCUSD",
-            SymbolConfig(
-                symbol = "BTCUSD",
-                displayName = "Bitcoin (Spot)",
-                brokerSymbol = "BTCUSD",
-                assetType = AssetType.CRYPTO,
-                digits = 2,
-                contractSize = 1.0,
-                minLot = 0.01,
-                maxLot = 5.0,
-                lotStep = 0.01,
-                tickSize = 0.10,
-                tickValue = 0.10,
-                minimumStopDistance = 25.0,
-                spreadLimit = 15.0,
-                minimumAtr = 20.0,
-                maximumAtr = 3000.0
-            )
-        )
-        // Major Forex Pairs
-        put(
-            "EURUSD",
-            SymbolConfig(
-                symbol = "EURUSD",
-                displayName = "EUR/USD",
-                brokerSymbol = "EURUSD",
-                assetType = AssetType.FOREX,
-                digits = 5,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.00001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.0005,
-                spreadLimit = 0.00025,
-                minimumAtr = 0.0002,
-                maximumAtr = 0.02
-            )
-        )
-        put(
-            "GBPUSD",
-            SymbolConfig(
-                symbol = "GBPUSD",
-                displayName = "GBP/USD",
-                brokerSymbol = "GBPUSD",
-                assetType = AssetType.FOREX,
-                digits = 5,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.00001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.0005,
-                spreadLimit = 0.00030,
-                minimumAtr = 0.0002,
-                maximumAtr = 0.02
-            )
-        )
-        put(
-            "USDJPY",
-            SymbolConfig(
-                symbol = "USDJPY",
-                displayName = "USD/JPY",
-                brokerSymbol = "USDJPY",
-                assetType = AssetType.FOREX,
-                digits = 3,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.05,
-                spreadLimit = 0.03,
-                minimumAtr = 0.02,
-                maximumAtr = 2.0
-            )
-        )
-        put(
-            "AUDUSD",
-            SymbolConfig(
-                symbol = "AUDUSD",
-                displayName = "AUD/USD",
-                brokerSymbol = "AUDUSD",
-                assetType = AssetType.FOREX,
-                digits = 5,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.00001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.0005,
-                spreadLimit = 0.00030,
-                minimumAtr = 0.0002,
-                maximumAtr = 0.02
-            )
-        )
-        put(
-            "USDCAD",
-            SymbolConfig(
-                symbol = "USDCAD",
-                displayName = "USD/CAD",
-                brokerSymbol = "USDCAD",
-                assetType = AssetType.FOREX,
-                digits = 5,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.00001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.0005,
-                spreadLimit = 0.00030,
-                minimumAtr = 0.0002,
-                maximumAtr = 0.02
-            )
-        )
-        put(
-            "USDCHF",
-            SymbolConfig(
-                symbol = "USDCHF",
-                displayName = "USD/CHF",
-                brokerSymbol = "USDCHF",
-                assetType = AssetType.FOREX,
-                digits = 5,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.00001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.0005,
-                spreadLimit = 0.00030,
-                minimumAtr = 0.0002,
-                maximumAtr = 0.02
-            )
-        )
-        put(
-            "NZDUSD",
-            SymbolConfig(
-                symbol = "NZDUSD",
-                displayName = "NZD/USD",
-                brokerSymbol = "NZDUSD",
-                assetType = AssetType.FOREX,
-                digits = 5,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.00001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.0005,
-                spreadLimit = 0.00035,
-                minimumAtr = 0.0002,
-                maximumAtr = 0.02
-            )
-        )
-        // Cross Pairs
-        put(
-            "EURGBP",
-            SymbolConfig(
-                symbol = "EURGBP",
-                displayName = "EUR/GBP",
-                brokerSymbol = "EURGBP",
-                assetType = AssetType.FOREX,
-                digits = 5,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.00001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.0005,
-                spreadLimit = 0.00035,
-                minimumAtr = 0.0002,
-                maximumAtr = 0.015
-            )
-        )
-        put(
-            "EURJPY",
-            SymbolConfig(
-                symbol = "EURJPY",
-                displayName = "EUR/JPY",
-                brokerSymbol = "EURJPY",
-                assetType = AssetType.FOREX,
-                digits = 3,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.05,
-                spreadLimit = 0.04,
-                minimumAtr = 0.02,
-                maximumAtr = 2.0
-            )
-        )
-        put(
-            "GBPJPY",
-            SymbolConfig(
-                symbol = "GBPJPY",
-                displayName = "GBP/JPY",
-                brokerSymbol = "GBPJPY",
-                assetType = AssetType.FOREX,
-                digits = 3,
-                contractSize = 100000.0,
-                minLot = 0.01,
-                maxLot = 10.0,
-                lotStep = 0.01,
-                tickSize = 0.001,
-                tickValue = 10.0,
-                minimumStopDistance = 0.05,
-                spreadLimit = 0.05,
-                minimumAtr = 0.02,
-                maximumAtr = 3.0
-            )
-        )
+        SymbolCatalog.ALL_SYMBOLS.forEach { put(it.symbol, it) }
     }
 
     private val candlesMap = ConcurrentHashMap<String, MutableList<Candle>>()
@@ -343,8 +106,25 @@ class TradingEngine(
             marketDataProvider.subscribe(symbol)
         }
 
+        startQuoteCollection()
+
         if (config.isBotEnabled && !config.emergencyStop && !config.safeMode) {
             start()
+        }
+    }
+
+    private fun startQuoteCollection() {
+        if (quoteStreamJob?.isActive == true) return
+        quoteStreamJob = scope.launch {
+            try {
+                marketDataProvider.quotes().collect { quote ->
+                    processQuote(quote)
+                }
+            } catch (e: Exception) {
+                // If stream is interrupted, restart after brief pause
+                delay(3000)
+                startQuoteCollection()
+            }
         }
     }
 
@@ -353,6 +133,7 @@ class TradingEngine(
 
         stateMachine.transitionTo(StateMachineState.STARTING, "Starting trading loop")
         watchdogManager.start()
+        startQuoteCollection()
 
         engineJob = scope.launch {
             try {
@@ -401,9 +182,9 @@ class TradingEngine(
                     risk = config.defaultRiskPercent
                 )
 
-                // Main tick collection & strategy loop
-                marketDataProvider.quotes().collect { quote ->
-                    processQuote(quote)
+                // Keep engine job alive while bot is active
+                while (isActive) {
+                    delay(1000)
                 }
 
             } catch (e: CancellationException) {
@@ -469,16 +250,150 @@ class TradingEngine(
             }
         }
 
-        // 3. Update account info
+        // 3. Auto-manage open positions (Break-Even & Trailing Stop)
+        autoManagePositions(quote)
+
+        // 4. Update account info
         val account = activeBroker.getAccount()
         _currentAccount.value = account
 
-        // 4. Update rolling candles
+        // 5. Update rolling candles
         updateRollingCandle(quote)
 
-        // 5. Evaluate strategy if in valid state
-        if (stateMachine.currentState.value in listOf(StateMachineState.READY, StateMachineState.ANALYZING)) {
-            evaluateSymbol(quote.symbol, quote)
+        // 6. Evaluate strategy if in valid state
+        if (stateMachine.currentState.value in listOf(StateMachineState.READY, StateMachineState.ANALYZING, StateMachineState.POSITION_OPEN)) {
+            val openPositions = repository.getOpenPositions()
+            val config = repository.getOrCreateConfig()
+            if (openPositions.size < config.maxOpenPositions) {
+                evaluateSymbol(quote.symbol, quote)
+            }
+        }
+    }
+
+    private suspend fun autoManagePositions(quote: Quote) {
+        val openPositions = repository.getOpenPositions().filter { it.symbol == quote.symbol }
+        val config = repository.getOrCreateConfig()
+        val symbolConfig = symbolConfigs[quote.symbol] ?: return
+        val candles = candlesMap[quote.symbol] ?: emptyList()
+        val atr = if (candles.size >= 14) IndicatorCalculator.computeLatest(candles)?.atr ?: (symbolConfig.tickSize * 20.0) else (symbolConfig.tickSize * 20.0)
+
+        openPositions.forEach { pos ->
+            val markPrice = if (pos.direction == TradeDirection.BUY) quote.bid else quote.ask
+            val priceDiff = if (pos.direction == TradeDirection.BUY) markPrice - pos.entryPrice else pos.entryPrice - markPrice
+            val meta = SymbolCatalog.getMeta(pos.symbol)
+            val ticks = priceDiff / meta.first
+            val unrealized = ticks * meta.second * pos.volume
+            val riskDist = abs(pos.entryPrice - pos.stopLoss)
+            val unrealizedR = if (riskDist > 0) priceDiff / riskDist else 0.0
+
+            var updatedSL = pos.stopLoss
+            var slChanged = false
+            var slReason = ""
+
+            // 1. Break-Even Trigger (+1.0R achieved)
+            if (unrealizedR >= 1.0) {
+                if (pos.direction == TradeDirection.BUY && pos.stopLoss < pos.entryPrice) {
+                    updatedSL = pos.entryPrice + (symbolConfig.spreadLimit * 0.2)
+                    slChanged = true
+                    slReason = "Auto Break-Even secured at +1.0R"
+                } else if (pos.direction == TradeDirection.SELL && pos.stopLoss > pos.entryPrice) {
+                    updatedSL = pos.entryPrice - (symbolConfig.spreadLimit * 0.2)
+                    slChanged = true
+                    slReason = "Auto Break-Even secured at +1.0R"
+                }
+            }
+
+            // 2. Dynamic Trailing Stop (+1.5R achieved)
+            if (unrealizedR >= 1.5) {
+                val trailDistance = atr * config.atrSlMultiplier * 0.8
+                if (pos.direction == TradeDirection.BUY) {
+                    val candidateSL = quote.bid - trailDistance
+                    if (candidateSL > updatedSL) {
+                        updatedSL = candidateSL
+                        slChanged = true
+                        slReason = "Auto Trailing Stop locked at ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)}"
+                    }
+                } else {
+                    val candidateSL = quote.ask + trailDistance
+                    if (candidateSL < updatedSL) {
+                        updatedSL = candidateSL
+                        slChanged = true
+                        slReason = "Auto Trailing Stop locked at ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)}"
+                    }
+                }
+            }
+
+            val updatedPos = pos.copy(
+                currentPrice = markPrice,
+                unrealizedProfit = unrealized,
+                unrealizedR = unrealizedR,
+                stopLoss = updatedSL
+            )
+            repository.recordPosition(updatedPos)
+
+            if (slChanged) {
+                repository.logEvent(
+                    LogLevel.INFO,
+                    "TradingEngine",
+                    "POSITION_SL_UPDATED",
+                    "Auto-Trade $slReason for ${pos.symbol} (${pos.direction})",
+                    pos.symbol
+                )
+            }
+        }
+    }
+
+    suspend fun closeSinglePosition(positionId: String, reason: CloseReason = CloseReason.MANUAL): Boolean {
+        val openPositions = repository.getOpenPositions()
+        val pos = openPositions.find { it.id == positionId } ?: return false
+        val res = activeBroker.closePosition(positionId, reason)
+        if (res.success) {
+            repository.removePosition(positionId)
+            val closedTrade = Trade(
+                id = pos.id,
+                symbol = pos.symbol,
+                direction = pos.direction,
+                volume = pos.volume,
+                entryPrice = pos.entryPrice,
+                stopLoss = pos.stopLoss,
+                takeProfit = pos.takeProfit,
+                riskAmount = 0.0,
+                riskPercent = 0.25,
+                rr = 2.0,
+                openedAt = pos.openedAt,
+                closedAt = System.currentTimeMillis(),
+                closePrice = res.executedPrice,
+                profit = pos.unrealizedProfit,
+                profitR = pos.unrealizedR,
+                status = TradeStatus.CLOSED,
+                closeReason = reason,
+                mode = activeBroker.mode
+            )
+            repository.recordTrade(closedTrade)
+            notificationManager.notifyTradeClosed(closedTrade)
+            repository.logEvent(
+                LogLevel.INFO,
+                "TradingEngine",
+                "POSITION_CLOSED_MANUAL",
+                "Closed position on ${pos.symbol} at ${res.executedPrice}, P/L: $${"%.2f".format(pos.unrealizedProfit)}",
+                pos.symbol
+            )
+            val remaining = repository.getOpenPositions()
+            if (remaining.isEmpty() && stateMachine.currentState.value == StateMachineState.POSITION_OPEN) {
+                stateMachine.transitionTo(StateMachineState.READY, "Position closed")
+            }
+            return true
+        }
+        return false
+    }
+
+    fun isSymbolEnabled(symbol: String): Boolean {
+        return symbolConfigs[symbol]?.enabled ?: false
+    }
+
+    fun setSymbolEnabled(symbol: String, enabled: Boolean) {
+        symbolConfigs[symbol]?.let {
+            symbolConfigs[symbol] = it.copy(enabled = enabled)
         }
     }
 

@@ -224,6 +224,22 @@ fun PositionsScreen() {
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Auto Position Management Badges
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (pos.unrealizedR >= 1.0) {
+                                Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
+                                    Text("🛡️ Break-Even Locked", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
+                            if (pos.unrealizedR >= 1.5) {
+                                Surface(color = CyanContainer, shape = RoundedCornerShape(4.dp)) {
+                                    Text("🎯 Trailing Active", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
+                        }
+
                         HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
 
                         // Current Price & Progress
@@ -324,7 +340,7 @@ fun PositionsScreen() {
                         OutlinedButton(
                             onClick = {
                                 coroutineScope.launch {
-                                    engine.closeAllPositions("Manual single position close")
+                                    engine.closeSinglePosition(pos.id)
                                 }
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = CrimsonLoss),

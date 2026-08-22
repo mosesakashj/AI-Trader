@@ -18,16 +18,17 @@ object MarketScheduleUtils {
     /**
      * Determines whether the market for a given symbol is currently open for trading.
      * 
-     * Gold (XAUUSD / Forex Spot):
+     * Forex & Metals (XAUUSD, EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF, NZDUSD, EURGBP, EURJPY, GBPJPY):
      * - Opens Sunday 22:00 UTC (5:00 PM EST)
      * - Closes Friday 22:00 UTC (5:00 PM EST)
      * - Weekends (Saturday all day, Sunday until 22:00 UTC): CLOSED
      * 
-     * Bitcoin (BTCUSD / Crypto):
+     * Crypto (BTCUSD, ETHUSD, SOLUSD):
      * - Open 24/7/365
      */
     fun getMarketSession(symbol: String, currentTimeMillis: Long = System.currentTimeMillis()): MarketSessionInfo {
-        if (symbol == "BTCUSD" || symbol == "ETHUSD") {
+        val isCrypto = symbol in listOf("BTCUSD", "ETHUSD", "SOLUSD")
+        if (isCrypto) {
             return MarketSessionInfo(
                 symbol = symbol,
                 isOpen = true,
@@ -75,7 +76,7 @@ object MarketScheduleUtils {
                 isOpen = false,
                 sessionName = "Weekend Market Close",
                 statusLabel = "MARKET CLOSED",
-                details = "Physical Gold/Forex markets are closed on weekends. Showing real Friday closing spot price. Reopens Sunday 22:00 UTC.",
+                details = "Forex/Metals markets are closed on weekends. Showing real Friday closing spot price. Reopens Sunday 22:00 UTC.",
                 nextOpenMillis = nextOpenCal.timeInMillis,
                 timeRemainingString = remainingStr
             )

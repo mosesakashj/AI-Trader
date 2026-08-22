@@ -67,7 +67,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun closeSinglePosition(positionId: String) {
         viewModelScope.launch {
-            engine.closeAllPositions("Manual position close")
+            engine.closeSinglePosition(positionId, CloseReason.MANUAL)
         }
     }
 
