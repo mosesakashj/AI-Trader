@@ -111,6 +111,22 @@ class SecureStorage(context: Context) {
     fun getBrokerApiKey(): String = getDecryptedString("broker_api_key")
     fun saveBrokerApiKey(apiKey: String) = saveEncryptedString("broker_api_key", apiKey)
 
+    // NVIDIA LLM API Key
+    fun getNvidiaApiKey(): String = getDecryptedString("nvidia_api_key")
+    fun saveNvidiaApiKey(apiKey: String) = saveEncryptedString("nvidia_api_key", apiKey)
+
+    // Google Gemini API Key
+    fun getGeminiApiKey(): String = getDecryptedString("gemini_api_key")
+    fun saveGeminiApiKey(apiKey: String) = saveEncryptedString("gemini_api_key", apiKey)
+
+    // Anthropic Claude API Key
+    fun getClaudeApiKey(): String = getDecryptedString("claude_api_key")
+    fun saveClaudeApiKey(apiKey: String) = saveEncryptedString("claude_api_key", apiKey)
+
+    // OpenAI ChatGPT API Key
+    fun getChatGptApiKey(): String = getDecryptedString("chatgpt_api_key")
+    fun saveChatGptApiKey(apiKey: String) = saveEncryptedString("chatgpt_api_key", apiKey)
+
     fun clearAllSecrets() {
         prefs.edit().clear().apply()
     }

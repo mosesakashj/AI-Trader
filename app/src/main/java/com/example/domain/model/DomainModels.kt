@@ -1,5 +1,14 @@
 package com.example.domain.model
 
+enum class StrategyType(val displayName: String, val description: String) {
+    PULLBACK("Trend Pullback", "EMA trend + pullback to EMA band with ADX confirmation"),
+    BREAKOUT("Breakout", "Price breaks key levels with volume/momentum confirmation"),
+    MEAN_REVERSION("Mean Reversion", "RSI/Bollinger extremes revert to mean in ranging markets"),
+    MOMENTUM("Momentum", "Strong directional moves with MACD/ADX alignment"),
+    RANGE_TRADING("Range Trading", "Support/Resistance bounces in defined ranges"),
+    SCALPING("Scalping", "Quick 0.5-1R trades on micro-structure patterns")
+}
+
 data class Candle(
     val symbol: String,
     val timeframe: Timeframe,
@@ -117,7 +126,8 @@ data class SymbolConfig(
 )
 
 data class StrategyConfig(
-    val strategyVersion: String = "1.0.0",
+    val strategyVersion: String = "2.0.0",
+    val strategyType: StrategyType = StrategyType.PULLBACK,
     val emaFastPeriod: Int = 20,
     val emaSlowPeriod: Int = 50,
     val adxPeriod: Int = 14,
@@ -125,10 +135,38 @@ data class StrategyConfig(
     val atrPeriod: Int = 14,
     val atrSlMultiplier: Double = 1.5,
     val riskRewardRatio: Double = 2.0,
-    val maxCandleExtensionAtr: Double = 2.0, // Max distance from EMA20 in ATR units
+    val maxCandleExtensionAtr: Double = 2.0,
     val sessionStartHour: Int = 0,
     val sessionEndHour: Int = 24,
-    val timezone: String = "UTC"
+    val timezone: String = "UTC",
+    
+    // Breakout parameters
+    val breakoutLookbackPeriod: Int = 20,
+    val breakoutVolumeMultiplier: Double = 1.5,
+    val breakoutConfirmCandles: Int = 2,
+    
+    // Mean Reversion parameters
+    val rsiPeriod: Int = 14,
+    val rsiOverbought: Double = 70.0,
+    val rsiOversold: Double = 30.0,
+    val bbPeriod: Int = 20,
+    val bbStdDev: Double = 2.0,
+    
+    // Momentum parameters
+    val macdFastPeriod: Int = 12,
+    val macdSlowPeriod: Int = 26,
+    val macdSignalPeriod: Int = 9,
+    val momentumAdxThreshold: Double = 30.0,
+    
+    // Range Trading parameters
+    val rangeLookbackPeriod: Int = 50,
+    val rangeMinTouches: Int = 2,
+    val rangeAdxMax: Double = 20.0,
+    
+    // Scalping parameters
+    val scalpTimeframe: Timeframe = Timeframe.M5,
+    val scalpMinRr: Double = 1.5,
+    val scalpMaxHoldMinutes: Int = 30
 )
 
 data class RiskConfig(

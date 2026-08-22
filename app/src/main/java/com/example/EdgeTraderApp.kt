@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import com.example.ai.AiManager
 import com.example.broker.DemoBrokerAdapter
 import com.example.broker.LiveBrokerAdapter
 import com.example.broker.PaperBrokerAdapter
@@ -34,6 +35,9 @@ class EdgeTraderApp : Application() {
     lateinit var tradingEngine: TradingEngine
         private set
 
+    lateinit var aiManager: AiManager
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -60,6 +64,8 @@ class EdgeTraderApp : Application() {
             },
             marketDataProvider = marketDataProvider
         )
+
+        aiManager = AiManager(secureStorage)
 
         CoroutineScope(Dispatchers.Default).launch {
             tradingEngine.initialize()

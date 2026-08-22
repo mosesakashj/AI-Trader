@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.EdgeTraderApp
+import com.example.ai.AiManager
+import com.example.ai.AiProviderType
 import com.example.domain.model.AssetType
 import com.example.domain.model.TradingMode
 import com.example.notifications.TelegramNotifier
@@ -89,6 +91,20 @@ fun SettingsScreen(
         } ?: listOf("XAUUSD", "BTCUSD"))
     }
     var monitoredPairsSaveResult by remember { mutableStateOf<String?>(null) }
+
+    // AI Analysis State
+    val aiManager = remember { EdgeTraderApp.instance.aiManager }
+    val aiProviders by aiManager.providers.collectAsState(initial = emptyList())
+    val activeProviderId by aiManager.activeProviderId.collectAsState()
+    var selectedProviderId by remember { mutableStateOf(activeProviderId ?: "") }
+    var nvidiaApiKey by remember { mutableStateOf(secureStorage.getNvidiaApiKey()) }
+    var geminiApiKey by remember { mutableStateOf(secureStorage.getGeminiApiKey()) }
+    var claudeApiKey by remember { mutableStateOf(secureStorage.getClaudeApiKey()) }
+    var chatGptApiKey by remember { mutableStateOf(secureStorage.getChatGptApiKey()) }
+    var aiTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingAi by remember { mutableStateOf(false) }
+    var aiAnalysisResult by remember { mutableStateOf<String?>(null) }
+    var isAnalyzing by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -729,6 +745,295 @@ fun SettingsScreen(
 
                     if (testResult != null) {
                         Text(testResult!!, style = MaterialTheme.typography.bodySmall, color = if (testResult!!.startsWith("✅")) EmeraldGain else CrimsonLoss)
+                    }
+                }
+            }
+        }
+
+        // Battery Optimization Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.BatteryAlert, contentDescription = null, tint = StatusWarning)
+                        Text("24/7 Mobile Execution Guidelines", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    }
+                    Text("1. Exclude EdgeTrader from Android Battery Optimization in Settings > Apps > Special App Access.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Text("2. Allow Unrestricted Mobile Background Data for continuous quote feeds.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Text("3. Keep device plugged into power for extended overnight sessions.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                }
+            }
+        }
+
+        // AI Integration Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth().testTag("ai_integration_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            color = CyanContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Psychology, contentDescription = null, tint = CyanLight, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column {
+                            Text("AI Market Analysis", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Integrate with LLMs for enhanced trade decisions", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        }
+                    }
+
+                    Text("Active Provider:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    
+                    // Provider Selector
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        aiProviders.forEach { provider ->
+                            val isSelected = selectedProviderId == provider.config.id
+                            val isEnabled = provider.config.enabled
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    if (isEnabled) {
+                                        selectedProviderId = provider.config.id
+                                        aiManager.setActiveProvider(provider.config.id)
+                                    }
+                                },
+                                enabled = isEnabled,
+                                label = { 
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(provider.config.name, style = MaterialTheme.typography.labelSmall)
+                                        if (!isEnabled) {
+                                            Icon(Icons.Default.Lock, contentDescription = null, tint = TextMuted, modifier = Modifier.size(12.dp))
+                                        }
+                                    }
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = if (isEnabled) PrimaryBlueContainer else SurfaceVariantDark,
+                                    selectedLabelColor = if (isEnabled) PrimaryBlue else TextMuted,
+                                    containerColor = if (isEnabled) SurfaceDark else SurfaceVariantDark,
+                                    labelColor = if (isEnabled) TextSecondary else TextMuted
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (selectedProviderId == AiProviderType.NVIDIA) {
+                        HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 4.dp))
+                        
+                        Text("NVIDIA Nemotron 3 Ultra Configuration", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        
+                        OutlinedTextField(
+                            value = nvidiaApiKey,
+                            onValueChange = { nvidiaApiKey = it },
+                            label = { Text("NVIDIA API Key") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            placeholder = { Text("nvapi-xxxxxxxxxxxxxxxxxxxxxxxx") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("nvidia_api_key_input"),
+                            isError = nvidiaApiKey.isNotBlank() && !nvidiaApiKey.startsWith("nvapi-")
+                        )
+                        
+                        if (nvidiaApiKey.isNotBlank() && !nvidiaApiKey.startsWith("nvapi-")) {
+                            Text("API key should start with 'nvapi-'", style = MaterialTheme.typography.labelSmall, color = CrimsonLoss)
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = {
+                                    secureStorage.saveNvidiaApiKey(nvidiaApiKey)
+                                    aiManager.refreshProviders()
+                                    aiTestResult = "✅ NVIDIA API key saved! Provider list refreshed."
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("save_nvidia_btn")
+                            ) {
+                                Text("Save API Key", fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isTestingAi = true
+                                    secureStorage.saveNvidiaApiKey(nvidiaApiKey)
+                                    aiManager.refreshProviders()
+                                    
+                                    coroutineScope.launch {
+                                        val provider = aiManager.providers.value.firstOrNull { it.config.id == AiProviderType.NVIDIA }
+                                        provider?.testConnection()?.onSuccess { msg ->
+                                            aiTestResult = "✅ $msg"
+                                        }?.onFailure { e ->
+                                            aiTestResult = "❌ Connection failed: ${e.message}"
+                                        }
+                                        isTestingAi = false
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f).testTag("test_nvidia_btn")
+                            ) {
+                                if (isTestingAi) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PrimaryBlue, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Testing...", color = PrimaryBlue)
+                                } else {
+                                    Icon(Icons.Default.Link, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Test Connection", color = PrimaryBlue)
+                                }
+                            }
+                        }
+
+                        if (aiTestResult != null) {
+                            Text(
+                                aiTestResult!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (aiTestResult!!.startsWith("✅")) EmeraldGain else CrimsonLoss
+                            )
+                        }
+                    }
+
+                    // AI Analysis Test Section
+                    HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 8.dp))
+                    
+                    Text("Test AI Analysis", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text("Run a sample analysis on current market conditions", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                isAnalyzing = true
+                                aiAnalysisResult = null
+                                coroutineScope.launch {
+                                    val engine = EdgeTraderApp.instance.tradingEngine
+                                    val account = engine.currentAccount.value
+                                    val quotes = engine.activeQuotes.value
+                                    
+                                    // Pick first monitored pair with quote
+                                    val testSymbol = monitoredPairs.firstOrNull { quotes.containsKey(it) } ?: "XAUUSD"
+                                    val quote = quotes[testSymbol] ?: return@launch
+                                    val candles = engine.getCandles(testSymbol)
+                                    val indicators = com.example.domain.indicators.IndicatorCalculator.computeLatest(
+                                        candles = candles.filter { it.isClosed },
+                                        fastEmaPeriod = 20,
+                                        slowEmaPeriod = 50,
+                                        adxPeriod = 14,
+                                        atrPeriod = 14
+                                    )
+                                    
+                                    val indicatorMap = mutableMapOf<String, Double>()
+                                    indicators?.let {
+                                        indicatorMap["EMA_Fast"] = it.emaFast
+                                        indicatorMap["EMA_Slow"] = it.emaSlow
+                                        indicatorMap["ADX"] = it.adx
+                                        indicatorMap["ATR"] = it.atr
+                                    }
+                                    
+                                    val request = com.example.ai.AiAnalysisRequest(
+                                        symbol = testSymbol,
+                                        timeframe = "M15",
+                                        currentPrice = (quote.bid + quote.ask) / 2.0,
+                                        signalDirection = null,
+                                        signalEntry = null,
+                                        signalStopLoss = null,
+                                        signalTakeProfit = null,
+                                        indicators = indicatorMap,
+                                        recentCandles = candles.filter { it.isClosed }.takeLast(20).map { c ->
+                                            com.example.ai.CandleSnapshot(c.openTime, c.open, c.high, c.low, c.close, c.volume)
+                                        },
+                                        accountEquity = account.equity,
+                                        openPositions = engine.repository.getOpenPositions().size,
+                                        dailyPnL = engine.dailyProfitLoss.value,
+                                        riskPercent = 0.25
+                                    )
+                                    
+                                    val result = aiManager.analyzeMarket(request).getOrNull()
+                                    if (result != null) {
+                                        aiAnalysisResult = "${result.recommendation} (${"%.0f".format(result.confidence * 100)}%): ${result.reasoning.take(200)}..."
+                                    } else {
+                                        aiAnalysisResult = "❌ Analysis failed: ${aiManager.analysisError.value}"
+                                    }
+                                    isAnalyzing = false
+                                }
+                            },
+                            enabled = !isAnalyzing && selectedProviderId.isNotBlank(),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).testTag("run_ai_analysis_btn")
+                        ) {
+                            if (isAnalyzing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PrimaryBlue, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Analyzing...", color = PrimaryBlue)
+                            } else {
+                                Icon(Icons.Default.AutoGraph, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Run Analysis", color = PrimaryBlue)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                isAnalyzing = true
+                                aiAnalysisResult = null
+                                coroutineScope.launch {
+                                    val request = com.example.ai.AiChatRequest(
+                                        messages = listOf(
+                                            com.example.ai.AiChatMessage("user", "Explain the current EURUSD market structure in 3 sentences.")
+                                        )
+                                    )
+                                    val result = aiManager.chat(request).getOrNull()
+                                    if (result != null) {
+                                        aiAnalysisResult = "Chat: ${result.content.take(200)}..."
+                                    } else {
+                                        aiAnalysisResult = "❌ Chat failed"
+                                    }
+                                    isAnalyzing = false
+                                }
+                            },
+                            enabled = !isAnalyzing && selectedProviderId.isNotBlank(),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).testTag("ai_chat_btn")
+                        ) {
+                            Icon(Icons.Default.Chat, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Test Chat", color = PrimaryBlue)
+                        }
+                    }
+
+                    if (aiAnalysisResult != null) {
+                        Surface(
+                            color = SurfaceVariantDark,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                aiAnalysisResult!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextPrimary,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    // Future providers info
+                    if (aiProviders.any { it.config.id in listOf(AiProviderType.GEMINI, AiProviderType.CLAUDE, AiProviderType.CHATGPT) }) {
+                        HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 8.dp))
+                        Text("Additional Providers", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        Text("Gemini, Claude, and ChatGPT integrations planned. Configure API keys when available.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                     }
                 }
             }

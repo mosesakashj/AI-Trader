@@ -16,6 +16,7 @@ data class BotConfigEntity(
     val maxDailyLossPercent: Double = 1.0,
     val maxConsecutiveLosses: Int = 3,
     val maxOpenPositions: Int = 1,
+    val strategyType: String = StrategyType.PULLBACK.name,
     val emaFastPeriod: Int = 20,
     val emaSlowPeriod: Int = 50,
     val adxPeriod: Int = 14,
@@ -23,6 +24,39 @@ data class BotConfigEntity(
     val atrPeriod: Int = 14,
     val atrSlMultiplier: Double = 1.5,
     val riskRewardRatio: Double = 2.0,
+    val maxCandleExtensionAtr: Double = 2.0,
+    val sessionStartHour: Int = 0,
+    val sessionEndHour: Int = 24,
+    val timezone: String = "UTC",
+    
+    // Breakout parameters
+    val breakoutLookbackPeriod: Int = 20,
+    val breakoutVolumeMultiplier: Double = 1.5,
+    val breakoutConfirmCandles: Int = 2,
+    
+    // Mean Reversion parameters
+    val rsiPeriod: Int = 14,
+    val rsiOverbought: Double = 70.0,
+    val rsiOversold: Double = 30.0,
+    val bbPeriod: Int = 20,
+    val bbStdDev: Double = 2.0,
+    
+    // Momentum parameters
+    val macdFastPeriod: Int = 12,
+    val macdSlowPeriod: Int = 26,
+    val macdSignalPeriod: Int = 9,
+    val momentumAdxThreshold: Double = 30.0,
+    
+    // Range Trading parameters
+    val rangeLookbackPeriod: Int = 50,
+    val rangeMinTouches: Int = 2,
+    val rangeAdxMax: Double = 20.0,
+    
+    // Scalping parameters
+    val scalpTimeframe: String = Timeframe.M5.name,
+    val scalpMinRr: Double = 1.5,
+    val scalpMaxHoldMinutes: Int = 30,
+    
     val xauusdEnabled: Boolean = true,
     val btcusdEnabled: Boolean = true,
     val eurusdEnabled: Boolean = false,
@@ -37,7 +71,7 @@ data class BotConfigEntity(
     val gbpjpyEnabled: Boolean = false,
     val telegramEnabled: Boolean = false,
     val telegramChatId: String = "",
-    val strategyVersion: String = "1.0.0",
+    val strategyVersion: String = "2.0.0",
     val updatedAt: Long = System.currentTimeMillis()
 )
 
