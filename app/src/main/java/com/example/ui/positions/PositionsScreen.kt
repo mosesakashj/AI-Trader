@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +37,76 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+
+@Composable
+fun PositionsScreen() {
+    val repository = EdgeTraderApp.instance.firestoreRepository
+    val engine = EdgeTraderApp.instance.tradingEngine
+    val openPositions by repository.openPositionsFlow.collectAsState(initial = emptyList())
+    val coroutineScope = rememberCoroutineScope()
+
+    var showCloseAllDialog by remember { mutableStateOf(false) }
+    var expandedPositionId by remember { mutableStateOf<String?>(null) }
+
+    if (showCloseAllDialog) {
+        CloseAllPositionsDialog(
+            positionCount = openPositions.size,
+            onConfirm = {
+                showCloseAllDialog = false
+                coroutineScope.launch { engine.closeAllPositions() }
+            },
+            onDismiss = { showCloseAllDialog = false }
+        )
+    }
+
+    if (openPositions.isEmpty()) {
+        EmptyPositionsCard()
+    } else {
+        val totalPnL = openPositions.sumOf { it.unrealizedProfit }
+        val longPositions = openPositions.count { it.direction == TradeDirection.BUY }
+        val shortPositions = openPositions.count { it.direction == TradeDirection.SELL }
+        val bestPosition = openPositions.maxByOrNull { it.unrealizedProfit }
+        val worstPosition = openPositions.minByOrNull { it.unrealizedProfit }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 16.dp)
+        ) {
+            item {
+                PortfolioOverviewCard(
+                    totalPnL = totalPnL,
+                    positionCount = openPositions.size,
+                    longCount = longPositions,
+                    shortCount = shortPositions,
+                    bestPosition = bestPosition,
+                    worstPosition = worstPosition
+                )
+            }
+
+            item {
+                QuickStatsRow(positions = openPositions)
+            }
+
+            items(openPositions, key = { it.id }) { position ->
+                ExpandablePositionCard(
+                    position = position,
+                    isExpanded = expandedPositionId == position.id,
+                    onToggleExpand = {
+                        expandedPositionId = if (expandedPositionId == position.id) null else position.id
+                    },
+                    onClose = { coroutineScope.launch { engine.closeSinglePosition(position.id) } }
+                )
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
+}
 
 @Composable
 private fun PortfolioOverviewCard(
@@ -349,7 +418,7 @@ private fun ExpandablePositionCard(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isLong = position.direction == TradeDirection.LONG
+    val isLong = position.direction == TradeDirection.BUY
     val isProfit = position.unrealizedProfit >= 0
     val durationMs = System.currentTimeMillis() - position.openedAt
 
@@ -534,297 +603,26 @@ private fun ExpandablePositionCard(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-        // Positions List
-        if (openPositions.isEmpty()) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, CardBorderDark),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Inbox, contentDescription = null, tint = TextMuted, modifier = Modifier.size(48.dp))
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("No open positions", fontWeight = FontWeight.Bold, color = TextPrimary)
-                            Text("The engine is monitoring the market for valid trade setups.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                        }
-                    }
-                }
-            }
-        } else {
-            items(openPositions, key = { it.id }) { pos ->
-                val isProfit = pos.unrealizedProfit >= 0
-                val timeHeld = formatDuration(System.currentTimeMillis() - pos.openedAt)
-                val distanceToSL = if (pos.direction == TradeDirection.BUY) pos.currentPrice - pos.stopLoss else pos.stopLoss - pos.currentPrice
-                val distanceToTP = if (pos.direction == TradeDirection.BUY) pos.takeProfit - pos.currentPrice else pos.currentPrice - pos.takeProfit
-                val totalRange = abs(pos.takeProfit - pos.stopLoss)
-                val progressToTP = if (totalRange > 0) ((abs(pos.currentPrice - pos.entryPrice)) / totalRange).toFloat().coerceIn(0f, 1f) else 0f
-                val slHitPct = if (totalRange > 0) (distanceToSL / totalRange * 100).toFloat().coerceIn(0f, 100f) else 0f
-                val tpHitPct = if (totalRange > 0) (distanceToTP / totalRange * 100).toFloat().coerceIn(0f, 100f) else 0f
-
-                // Enhanced analytics
-                val spreadOffset = abs(pos.entryPrice - pos.stopLoss)
-                val breakevenPrice = if (pos.direction == TradeDirection.BUY) pos.entryPrice + spreadOffset else pos.entryPrice - spreadOffset
-                val pnlPct = if (pos.entryPrice > 0) (pos.unrealizedProfit / (pos.volume * pos.entryPrice) * 100) else 0.0
-                val mfeR = pos.unrealizedR * 0.9
-                val timeHeldMillis = System.currentTimeMillis() - pos.openedAt
-                val timeHeldHours = timeHeldMillis / 3600000.0
-                val annualizedR = if (timeHeldHours > 0 && pos.unrealizedR > 0) (pos.unrealizedR / timeHeldHours) * 8760.0 else 0.0
-                val distanceFromEntry = if (pos.direction == TradeDirection.BUY) pos.currentPrice - pos.entryPrice else pos.entryPrice - pos.currentPrice
-                val targetR = if (abs(pos.entryPrice - pos.stopLoss) > 0) abs(pos.takeProfit - pos.entryPrice) / abs(pos.entryPrice - pos.stopLoss) else 0.0
-                val riskRewardAchieved = if (targetR > 0) pos.unrealizedR / targetR else 0.0
-                val dailyPnlContrib = if (timeHeldHours > 0) pos.unrealizedProfit / (timeHeldHours / 24.0) else 0.0
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, if (isProfit) EmeraldGain.copy(alpha = 0.6f) else CrimsonLoss.copy(alpha = 0.6f)),
-                    modifier = Modifier.fillMaxWidth().testTag("position_item_${pos.id}")
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Surface(
-                                    color = if (pos.direction == TradeDirection.BUY) EmeraldContainer else CrimsonContainer,
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = pos.direction.name,
-                                        color = if (pos.direction == TradeDirection.BUY) EmeraldDark else CrimsonDark,
-                                        fontWeight = FontWeight.Black,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                                Text(pos.symbol, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                                Text("${pos.volume} lots", color = if (isProfit) EmeraldGain else CrimsonLoss, style = MaterialTheme.typography.bodyMedium)
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "${if (isProfit) "+" else ""}$${"%.2f".format(pos.unrealizedProfit)}",
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (isProfit) EmeraldGain else CrimsonLoss,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "(${if (pnlPct >= 0) "+" else ""}${"%.2f".format(pnlPct)}%)",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (pnlPct >= 0) EmeraldGain else CrimsonLoss,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = "${if (isProfit) "+" else ""}${"%.2f".format(pos.unrealizedR)}R",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = TextSecondary
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Auto Position Management Badges
-                        val isBeSecured = (pos.direction == TradeDirection.BUY && pos.stopLoss >= (pos.entryPrice - 0.0001)) ||
-                                (pos.direction == TradeDirection.SELL && pos.stopLoss <= (pos.entryPrice + 0.0001))
-                        val isTrailing = (pos.direction == TradeDirection.BUY && pos.stopLoss > (pos.entryPrice + 0.001)) ||
-                                (pos.direction == TradeDirection.SELL && pos.stopLoss < (pos.entryPrice - 0.001))
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (isTrailing) {
-                                Surface(color = CyanContainer, shape = RoundedCornerShape(4.dp)) {
-                                    Text("🎯 Trailing Active (+${"%.2f".format(pos.unrealizedR)}R)", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                }
-                            } else if (isBeSecured) {
-                                Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
-                                    Text("🛡️ Break-Even Secured (Risk Free)", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                }
-                            } else if (pos.unrealizedR >= 0.6) {
-                                Surface(color = GoldContainer, shape = RoundedCornerShape(4.dp)) {
-                                    Text("⚡ BE Approaching (${"%.2f".format(pos.unrealizedR)}R)", style = MaterialTheme.typography.labelSmall, color = GoldHero, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
-
-                        // Current Price, Time Held, Distance from Entry
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Current Price", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text("${pos.currentPrice}", style = MaterialTheme.typography.titleMedium, color = TextPrimary, fontFamily = FontFamily.Monospace)
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Time Held", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Icon(Icons.Default.Timer, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
-                                    Text(timeHeld, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontFamily = FontFamily.Monospace)
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Distance from Entry", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(
-                                    formatDistance(distanceFromEntry, pos.symbol),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (distanceFromEntry >= 0) EmeraldGain else CrimsonLoss,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Enhanced Analytics Row 1: Breakeven, MFE, Annualized R
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Breakeven Price", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(
-                                    "${"%.5f".format(breakevenPrice)}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = GoldHero,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("MFE (Best R)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(
-                                    "${"%.2f".format(mfeR)}R",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = EmeraldGain,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Annualized R", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(
-                                    "${"%.1f".format(annualizedR)}R",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = CyanLight,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Enhanced Analytics Row 2: Daily P&L, R/R Achieved
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Daily P&L", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(
-                                    "$${"%.2f".format(dailyPnlContrib)}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (dailyPnlContrib >= 0) EmeraldGain else CrimsonLoss,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("R/R Achieved", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(
-                                    "${"%.0f".format(riskRewardAchieved * 100)}% of ${"%.1f".format(targetR)}R target",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (riskRewardAchieved >= 0.5) EmeraldGain else if (riskRewardAchieved >= 0.25) GoldHero else CrimsonLoss,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // SL/TP Progress Visualization
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("SL \u2192 TP Progress", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text("${"%.0f".format(slHitPct)}% to SL  |  ${"%.0f".format(tpHitPct)}% to TP", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontFamily = FontFamily.Monospace)
-                            }
-                            
-                            // Progress bar from SL to TP
-                            val progressFromSL = (if (pos.direction == TradeDirection.BUY) {
-                                if (pos.takeProfit != pos.stopLoss) (pos.currentPrice - pos.stopLoss) / (pos.takeProfit - pos.stopLoss) else 0.5
-                            } else {
-                                if (pos.stopLoss != pos.takeProfit) (pos.stopLoss - pos.currentPrice) / (pos.stopLoss - pos.takeProfit) else 0.5
-                            }).toFloat().coerceIn(0f, 1f)
-                            
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(SurfaceVariantDark)
-                            ) {
-                                // Progress from SL to current
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(progressFromSL)
-                                        .fillMaxHeight()
-                                        .background(if (isProfit) EmeraldGain.copy(alpha = 0.6f) else CrimsonLoss.copy(alpha = 0.6f))
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Detailed SL/TP Info
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Stop Loss", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text("${pos.stopLoss}", style = MaterialTheme.typography.bodyMedium, color = CrimsonLoss, fontFamily = FontFamily.Monospace)
-                                    Text("(${formatDistance(distanceToSL, pos.symbol)} to SL)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                }
-                            }
-                            Column {
-                                Text("Take Profit", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text("${pos.takeProfit}", style = MaterialTheme.typography.bodyMedium, color = EmeraldGain, fontFamily = FontFamily.Monospace)
-                                    Text("(${formatDistance(distanceToTP, pos.symbol)} to TP)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                }
-                            }
-                            Column {
-                                Text("Entry", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text("${pos.entryPrice}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-                        OutlinedButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    engine.closeSinglePosition(pos.id)
-                                }
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CrimsonLoss),
-                            border = BorderStroke(1.dp, CrimsonLoss),
-                            modifier = Modifier.fillMaxWidth().testTag("close_pos_btn_${pos.id}")
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Close Position Immediately", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                        }
+                    Button(
+                        onClick = onClose,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CrimsonLoss,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Close Position",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
