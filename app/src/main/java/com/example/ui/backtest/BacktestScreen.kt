@@ -268,6 +268,16 @@ fun BacktestScreen() {
                                             val candles = marketDataProvider.fetchHistoricalCandles(selectedSymbol, selectedTimeframe, count)
                                             walkForwardResult = backtestEngine.runWalkForward(candles, symbolConfig)
                                         }
+                                        4 -> {
+                                            // Monte Carlo
+                                            val candles = marketDataProvider.fetchHistoricalCandles(selectedSymbol, selectedTimeframe, count)
+                                            monteCarloResult = backtestEngine.runMonteCarlo(
+                                                candles = candles,
+                                                symbolConfig = symbolConfig,
+                                                riskPercent = risk,
+                                                simulationCount = 500
+                                            )
+                                        }
                                     }
                                 }
                                 isRunning = false
@@ -288,6 +298,7 @@ fun BacktestScreen() {
                                     1 -> Icons.Default.AutoGraph
                                     2 -> Icons.Default.Tune
                                     3 -> Icons.Default.Science
+                                    4 -> Icons.Default.Calculate
                                     else -> Icons.Default.PlayArrow
                                 },
                                 contentDescription = null
@@ -298,6 +309,7 @@ fun BacktestScreen() {
                                     1 -> "Run Multi-Pair Portfolio Backtest"
                                     2 -> "Run Parameter Grid Optimizer"
                                     3 -> "Execute Walk-Forward Splits"
+                                    4 -> "Run Monte Carlo Simulation"
                                     else -> "Execute Algorithmic Backtest"
                                 },
                                 fontWeight = FontWeight.Bold
@@ -635,6 +647,135 @@ fun BacktestScreen() {
                                         Text("PF: ${"%.2f".format(res.profitFactor)}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                                         Text("Win: ${"%.1f".format(res.winRate)}%", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                                         Text("DD: ${"%.1f".format(res.maxDrawdownPercent)}%", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Mode 4: Monte Carlo Results
+        if (testMode == 4 && monteCarloResult != null) {
+            val mc = monteCarloResult!!
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    modifier = Modifier.fillMaxWidth().testTag("monte_carlo_results_card")
+                ) {
+                    Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Monte Carlo Simulation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("${mc.simulationCount} randomized simulations from trade distribution", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            }
+                            Surface(
+                                color = if (mc.probabilityOfProfit >= 70.0) EmeraldContainer else if (mc.probabilityOfProfit >= 50.0) GoldContainer else CrimsonContainer,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    "P(Profit): ${"%.1f".format(mc.probabilityOfProfit)}%",
+                                    color = if (mc.probabilityOfProfit >= 70.0) EmeraldGain else if (mc.probabilityOfProfit >= 50.0) GoldHero else CrimsonLoss,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+
+                        // Key Statistics
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            MetricCard(
+                                title = "Probability of Profit",
+                                value = "${"%.1f".format(mc.probabilityOfProfit)}%",
+                                subtitle = "Ruin: ${"%.1f".format(mc.probabilityOfRuin)}%",
+                                valueColor = if (mc.probabilityOfProfit >= 70.0) EmeraldGain else if (mc.probabilityOfProfit >= 50.0) GoldHero else CrimsonLoss,
+                                modifier = Modifier.weight(1f)
+                            )
+                            MetricCard(
+                                title = "Avg Max Drawdown",
+                                value = "${"%.1f".format(mc.averageMaxDrawdown)}%",
+                                subtitle = "Expected DD",
+                                valueColor = CrimsonLoss,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            MetricCard(
+                                title = "Average Return",
+                                value = "${"%.1f".format(mc.averageReturn)}%",
+                                subtitle = "Per simulation",
+                                valueColor = if (mc.averageReturn >= 0) EmeraldGain else CrimsonLoss,
+                                modifier = Modifier.weight(1f)
+                            )
+                            MetricCard(
+                                title = "Monte Carlo Sharpe",
+                                value = "${"%.2f".format(mc.sharpeRatio)}",
+                                subtitle = "Risk-adjusted",
+                                valueColor = if (mc.sharpeRatio > 1.0) EmeraldGain else if (mc.sharpeRatio > 0.5) GoldHero else CrimsonLoss,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        // Percentile Analysis
+                        HorizontalDivider(color = CardBorderDark)
+                        Text("Equity Percentiles (Ending Balance)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(1, 5, 10, 25, 50, 75, 90, 95, 99).forEach { p ->
+                                val equity = mc.percentiles[p] ?: 0.0
+                                val ret = (equity - 10000.0) / 10000.0 * 100.0
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Surface(
+                                        color = if (p <= 10) CrimsonContainer else if (p <= 25) GoldContainer else if (p <= 75) CyanContainer else EmeraldContainer,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            "${p}th",
+                                            color = if (p <= 10) CrimsonLoss else if (p <= 25) GoldHero else if (p <= 75) CyanLight else EmeraldGain,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                    Text("\$${"%.2f".format(equity)}", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, color = TextPrimary)
+                                    Text("${if (ret >= 0) "+" else ""}${"%.2f".format(ret)}%", style = MaterialTheme.typography.bodyMedium, color = if (ret >= 0) EmeraldGain else CrimsonLoss, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                        }
+
+                        // Worst / Best / Median Cases
+                        HorizontalDivider(color = CardBorderDark)
+                        Text("Scenario Analysis", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            listOf(
+                                Triple("Worst Case (1%)", mc.worstCase, CrimsonLoss),
+                                Triple("Median (50%)", mc.medianCase, CyanLight),
+                                Triple("Best Case (99%)", mc.bestCase, EmeraldGain)
+                            ).forEach { (label, scenario, color) ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, color.copy(alpha = 0.5f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(label, fontWeight = FontWeight.Bold, color = color)
+                                        Text("Equity: \$${"%.2f".format(scenario.endingEquity)}", style = MaterialTheme.typography.bodySmall, color = TextPrimary, fontFamily = FontFamily.Monospace)
+                                        Text("Return: ${if (scenario.totalReturn >= 0) "+" else ""}${"%.2f".format(scenario.totalReturn)}%", style = MaterialTheme.typography.labelSmall, color = if (scenario.totalReturn >= 0) EmeraldGain else CrimsonLoss)
+                                        Text("Max DD: ${"%.1f".format(scenario.maxDrawdownPercent)}%", style = MaterialTheme.typography.labelSmall, color = CrimsonLoss)
+                                        Text("Trades: ${scenario.totalTrades} | WR: ${"%.1f".format(scenario.winRate)}%", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                                     }
                                 }
                             }

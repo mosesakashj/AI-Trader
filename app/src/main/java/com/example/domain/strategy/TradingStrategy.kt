@@ -1,6 +1,7 @@
-package com.example.domain.strategy
+﻿package com.example.domain.strategy
 
 import com.example.domain.indicators.IndicatorCalculator
+import com.example.domain.indicators.IndicatorValues
 import com.example.domain.model.*
 import java.util.*
 import kotlin.math.abs
@@ -12,10 +13,6 @@ class TradingStrategy(
     private val newsFilter: NewsFilter = NoNewsFilter()
 ) {
 
-    /**
-     * Evaluates closed candle history and generates deterministic Signal or explanation.
-     * Prevents look-ahead bias by strictly evaluating closed candles.
-     */
     fun evaluate(
         candles: List<Candle>,
         symbolConfig: SymbolConfig,
@@ -28,95 +25,250 @@ class TradingStrategy(
         consecutiveLossesReached: Boolean,
         marginSufficient: Boolean
     ): Signal? {
-        if (candles.size < max(strategyConfig.emaSlowPeriod + 10, strategyConfig.adxPeriod * 2)) {
-            return null
-        }
+        val minRequired = maxOf(
+            strategyConfig.emaSlowPeriod,
+            strategyConfig.bbPeriod,
+            strategyConfig.rangeLookbackPeriod,
+            strategyConfig.breakoutLookbackPeriod,
+            strategyConfig.adxPeriod * 2
+        ) + 10
+        if (candles.size < minRequired) return null
 
-        // Get closed candles (ensure we ignore forming/unclosed candles)
         val closedCandles = candles.filter { it.isClosed }
-        if (closedCandles.size < strategyConfig.emaSlowPeriod + 2) return null
+        if (closedCandles.size < 2) return null
 
         val lastClosedCandle = closedCandles.last()
+        if (lastClosedCandle.openTime == lastProcessedCandleTime) return null
+
         val prevClosedCandle = closedCandles[closedCandles.size - 2]
 
-        // Duplicate candle prevention
-        if (lastClosedCandle.openTime <= lastProcessedCandleTime) {
-            return null
-        }
+        if (!newsFilter.isNewsFreeWindow(lastClosedCandle.openTime, symbolConfig.symbol)) return null
 
         val indicators = IndicatorCalculator.computeLatest(
             candles = closedCandles,
             fastEmaPeriod = strategyConfig.emaFastPeriod,
             slowEmaPeriod = strategyConfig.emaSlowPeriod,
             adxPeriod = strategyConfig.adxPeriod,
-            atrPeriod = strategyConfig.atrPeriod
+            atrPeriod = strategyConfig.atrPeriod,
+            rsiPeriod = strategyConfig.rsiPeriod,
+            macdFast = strategyConfig.macdFastPeriod,
+            macdSlow = strategyConfig.macdSlowPeriod,
+            macdSignal = strategyConfig.macdSignalPeriod,
+            bbPeriod = strategyConfig.bbPeriod,
+            bbStdDev = strategyConfig.bbStdDev,
+            stochK = 14,
+            stochD = 3
         ) ?: return null
 
+        val prevIndicators = if (closedCandles.size >= 3) {
+            IndicatorCalculator.computeLatest(
+                candles = closedCandles.dropLast(1),
+                fastEmaPeriod = strategyConfig.emaFastPeriod,
+                slowEmaPeriod = strategyConfig.emaSlowPeriod,
+                adxPeriod = strategyConfig.adxPeriod,
+                atrPeriod = strategyConfig.atrPeriod,
+                rsiPeriod = strategyConfig.rsiPeriod,
+                macdFast = strategyConfig.macdFastPeriod,
+                macdSlow = strategyConfig.macdSlowPeriod,
+                macdSignal = strategyConfig.macdSignalPeriod,
+                bbPeriod = strategyConfig.bbPeriod,
+                bbStdDev = strategyConfig.bbStdDev,
+                stochK = 14,
+                stochD = 3
+            )
+        } else null
+
+        val atr = indicators.atr
+        val sessionCheck = isSessionAllowed(lastClosedCandle.openTime)
+        val spreadCheck = currentQuote.spread <= symbolConfig.spreadLimit
+        val atrCheck = atr >= symbolConfig.minimumAtr && atr <= symbolConfig.maximumAtr
+        val riskCheck = !dailyLossReached && !consecutiveLossesReached && marginSufficient && !hasOpenPosition &&
+            !riskConfig.emergencyStopActive && !riskConfig.safeModeActive && isConnectionHealthy
+
+        if (!sessionCheck || !spreadCheck || !atrCheck || !riskCheck) return null
+
+        return when (strategyConfig.strategyType) {
+            StrategyType.PULLBACK -> evaluatePullback(
+                closedCandles, lastClosedCandle, prevClosedCandle, indicators,
+                symbolConfig, currentQuote, riskCheck, sessionCheck, spreadCheck, atr
+            )
+            StrategyType.BREAKOUT -> evaluateBreakout(
+                closedCandles, lastClosedCandle, prevClosedCandle, indicators,
+                symbolConfig, currentQuote, riskCheck, sessionCheck, spreadCheck, atr
+            )
+            StrategyType.MEAN_REVERSION -> evaluateMeanReversion(
+                closedCandles, lastClosedCandle, prevClosedCandle, indicators,
+                symbolConfig, currentQuote, riskCheck, sessionCheck, spreadCheck, atr
+            )
+            StrategyType.MOMENTUM -> evaluateMomentum(
+                closedCandles, lastClosedCandle, prevClosedCandle, indicators, prevIndicators,
+                symbolConfig, currentQuote, riskCheck, sessionCheck, spreadCheck, atr
+            )
+            StrategyType.RANGE_TRADING -> evaluateRangeTrading(
+                closedCandles, lastClosedCandle, prevClosedCandle, indicators,
+                symbolConfig, currentQuote, riskCheck, sessionCheck, spreadCheck, atr
+            )
+            StrategyType.SCALPING -> evaluateScalping(
+                closedCandles, lastClosedCandle, prevClosedCandle, indicators, prevIndicators,
+                symbolConfig, currentQuote, riskCheck, sessionCheck, spreadCheck, atr
+            )
+        }
+    }
+
+    private fun evaluatePullback(
+        closedCandles: List<Candle>,
+        lastClosedCandle: Candle,
+        prevClosedCandle: Candle,
+        indicators: IndicatorValues,
+        symbolConfig: SymbolConfig,
+        currentQuote: Quote,
+        riskCheck: Boolean,
+        sessionCheck: Boolean,
+        spreadCheck: Boolean,
+        atr: Double
+    ): Signal? {
         val emaFast = indicators.emaFast
         val emaSlow = indicators.emaSlow
         val adx = indicators.adx
-        val atr = indicators.atr
 
-        // 1. Session check
-        val sessionCheck = isSessionAllowed(lastClosedCandle.openTime)
+        if (adx < strategyConfig.adxThreshold) return null
 
-        // 2. Spread check
-        val currentSpreadPips = (currentQuote.spread / symbolConfig.tickSize) * (symbolConfig.tickSize / 0.0001)
-        val spreadCheck = currentQuote.spread <= symbolConfig.spreadLimit
+        val emaBandUpper = emaFast + atr * 0.5
+        val emaBandLower = emaFast - atr * 0.5
 
-        // 3. Volatility check (ATR bounds)
-        val atrCheck = atr >= symbolConfig.minimumAtr && atr <= symbolConfig.maximumAtr
-
-        // 4. ADX trend strength check
-        val adxCheck = adx >= strategyConfig.adxThreshold
-
-        // 5. Risk & system health checks
-        val riskCheck = !dailyLossReached && !consecutiveLossesReached && marginSufficient && !hasOpenPosition &&
-                !riskConfig.emergencyStopActive && !riskConfig.safeModeActive && isConnectionHealthy
-
-        // Check BUY candidate
         val isBullishTrend = emaFast > emaSlow
+        val isBearishTrend = emaFast < emaSlow
+
+        val maxExtension = lastClosedCandle.close + atr * strategyConfig.maxCandleExtensionAtr
+        val minExtension = lastClosedCandle.close - atr * strategyConfig.maxCandleExtensionAtr
+
         val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
-        val buyPullback = prevClosedCandle.low <= (emaFast + (atr * 0.5)) || lastClosedCandle.low <= (emaFast + (atr * 0.5))
-        val buyNotExtended = abs(lastClosedCandle.close - emaFast) <= (atr * strategyConfig.maxCandleExtensionAtr)
+        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
 
-        val buyExplanation = SignalExplanation(
-            symbol = symbolConfig.symbol,
-            direction = TradeDirection.BUY,
-            emaFast = emaFast,
-            emaSlow = emaSlow,
-            adx = adx,
-            atr = atr,
-            trendCheck = isBullishTrend,
-            adxCheck = adxCheck,
-            pullbackCheck = buyPullback && buyNotExtended && atrCheck,
-            candleCheck = isBullishCandle,
-            spreadCheck = spreadCheck,
-            riskCheck = riskCheck,
-            sessionCheck = sessionCheck,
-            decision = if (isBullishTrend && adxCheck && buyPullback && buyNotExtended && isBullishCandle && atrCheck && spreadCheck && riskCheck && sessionCheck) "BUY" else "REJECT",
-            reason = when {
-                !isBullishTrend -> "EMA20 not above EMA50"
-                !adxCheck -> "ADX ($adx) below threshold ${strategyConfig.adxThreshold}"
-                !atrCheck -> "ATR ($atr) outside volatility range"
-                !buyPullback -> "No valid pullback to EMA band"
-                !buyNotExtended -> "Price overextended from EMA20"
-                !isBullishCandle -> "Closed candle not bullish"
-                !spreadCheck -> "Spread exceeds limit"
-                !sessionCheck -> "Outside allowed trading session"
-                !riskCheck -> "Risk limit / position / emergency active"
-                else -> "All entry criteria satisfied"
+        if (isBullishTrend) {
+            val pullbackToBand = lastClosedCandle.low <= emaBandUpper
+            val notExtended = lastClosedCandle.low >= minExtension
+
+            if (pullbackToBand && notExtended && isBullishCandle) {
+                val entryPrice = currentQuote.ask
+                val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
+                val stopLoss = entryPrice - slDistance
+                val takeProfit = entryPrice + slDistance * strategyConfig.riskRewardRatio
+                val riskReward = (takeProfit - entryPrice) / slDistance
+
+                return Signal(
+                    id = UUID.randomUUID().toString(),
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.BUY,
+                    price = entryPrice,
+                    stopLoss = stopLoss,
+                    takeProfit = takeProfit,
+                    rrRatio = riskReward,
+                    candleTime = lastClosedCandle.openTime,
+                    timestamp = System.currentTimeMillis(),
+                    explanation = SignalExplanation(
+                        symbol = symbolConfig.symbol,
+                        direction = TradeDirection.BUY,
+                        emaFast = emaFast,
+                        emaSlow = emaSlow,
+                        adx = adx,
+                        atr = atr,
+                        trendCheck = true,
+                        adxCheck = true,
+                        pullbackCheck = true,
+                        candleCheck = true,
+                        spreadCheck = spreadCheck,
+                        riskCheck = riskCheck,
+                        sessionCheck = sessionCheck,
+                        decision = "BUY",
+                        reason = "Bullish trend (EMA Fast > EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bullish candle"
+                    )
+                )
             }
-        )
+        }
 
-        if (buyExplanation.isAllPassed) {
+        if (isBearishTrend) {
+            val pullbackToBand = lastClosedCandle.high >= emaBandLower
+            val notExtended = lastClosedCandle.high <= maxExtension
+
+            if (pullbackToBand && notExtended && isBearishCandle) {
+                val entryPrice = currentQuote.bid
+                val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
+                val stopLoss = entryPrice + slDistance
+                val takeProfit = entryPrice - slDistance * strategyConfig.riskRewardRatio
+                val riskReward = (entryPrice - takeProfit) / slDistance
+
+                return Signal(
+                    id = UUID.randomUUID().toString(),
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.SELL,
+                    price = entryPrice,
+                    stopLoss = stopLoss,
+                    takeProfit = takeProfit,
+                    rrRatio = riskReward,
+                    candleTime = lastClosedCandle.openTime,
+                    timestamp = System.currentTimeMillis(),
+                    explanation = SignalExplanation(
+                        symbol = symbolConfig.symbol,
+                        direction = TradeDirection.SELL,
+                        emaFast = emaFast,
+                        emaSlow = emaSlow,
+                        adx = adx,
+                        atr = atr,
+                        trendCheck = true,
+                        adxCheck = true,
+                        pullbackCheck = true,
+                        candleCheck = true,
+                        spreadCheck = spreadCheck,
+                        riskCheck = riskCheck,
+                        sessionCheck = sessionCheck,
+                        decision = "SELL",
+                        reason = "Bearish trend (EMA Fast < EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bearish candle"
+                    )
+                )
+            }
+        }
+
+        return null
+    }
+
+    private fun evaluateBreakout(
+        closedCandles: List<Candle>,
+        lastClosedCandle: Candle,
+        prevClosedCandle: Candle,
+        indicators: IndicatorValues,
+        symbolConfig: SymbolConfig,
+        currentQuote: Quote,
+        riskCheck: Boolean,
+        sessionCheck: Boolean,
+        spreadCheck: Boolean,
+        atr: Double
+    ): Signal? {
+        val emaFast = indicators.emaFast
+        val emaSlow = indicators.emaSlow
+        val adx = indicators.adx
+
+        if (adx < strategyConfig.adxThreshold) return null
+
+        val lookback = min(strategyConfig.breakoutLookbackPeriod, closedCandles.size - 1)
+        val lookbackCandles = closedCandles.dropLast(1).takeLast(lookback)
+        if (lookbackCandles.size < strategyConfig.breakoutLookbackPeriod) return null
+
+        val highestHigh = lookbackCandles.maxOf { it.high }
+        val lowestLow = lookbackCandles.minOf { it.low }
+
+        val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
+        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
+
+        val bullishBreakout = lastClosedCandle.close > highestHigh && prevClosedCandle.close <= highestHigh
+        val bearishBreakout = lastClosedCandle.close < lowestLow && prevClosedCandle.close >= lowestLow
+
+        if (bullishBreakout && isBullishCandle) {
             val entryPrice = currentQuote.ask
-            val rawSlDistance = atr * strategyConfig.atrSlMultiplier
-            val minStopDistance = symbolConfig.minimumStopDistance
-            val slDistance = max(rawSlDistance, minStopDistance)
+            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
             val stopLoss = entryPrice - slDistance
-            val riskDistance = entryPrice - stopLoss
-            val takeProfit = entryPrice + (riskDistance * strategyConfig.riskRewardRatio)
+            val takeProfit = entryPrice + slDistance * strategyConfig.riskRewardRatio
+            val riskReward = (takeProfit - entryPrice) / slDistance
 
             return Signal(
                 id = UUID.randomUUID().toString(),
@@ -125,56 +277,35 @@ class TradingStrategy(
                 price = entryPrice,
                 stopLoss = stopLoss,
                 takeProfit = takeProfit,
-                rrRatio = strategyConfig.riskRewardRatio,
+                rrRatio = riskReward,
                 candleTime = lastClosedCandle.openTime,
-                explanation = buyExplanation,
-                strategyVersion = strategyConfig.strategyVersion
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.BUY,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = true,
+                    adxCheck = true,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "BUY",
+                    reason = "Bullish breakout above $highestHigh, ADX >= ${strategyConfig.adxThreshold}, bullish candle confirmation"
+                )
             )
         }
 
-        // Check SELL candidate
-        val isBearishTrend = emaFast < emaSlow
-        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
-        val sellPullback = prevClosedCandle.high >= (emaFast - (atr * 0.5)) || lastClosedCandle.high >= (emaFast - (atr * 0.5))
-        val sellNotExtended = abs(lastClosedCandle.close - emaFast) <= (atr * strategyConfig.maxCandleExtensionAtr)
-
-        val sellExplanation = SignalExplanation(
-            symbol = symbolConfig.symbol,
-            direction = TradeDirection.SELL,
-            emaFast = emaFast,
-            emaSlow = emaSlow,
-            adx = adx,
-            atr = atr,
-            trendCheck = isBearishTrend,
-            adxCheck = adxCheck,
-            pullbackCheck = sellPullback && sellNotExtended && atrCheck,
-            candleCheck = isBearishCandle,
-            spreadCheck = spreadCheck,
-            riskCheck = riskCheck,
-            sessionCheck = sessionCheck,
-            decision = if (isBearishTrend && adxCheck && sellPullback && sellNotExtended && isBearishCandle && atrCheck && spreadCheck && riskCheck && sessionCheck) "SELL" else "REJECT",
-            reason = when {
-                !isBearishTrend -> "EMA20 not below EMA50"
-                !adxCheck -> "ADX ($adx) below threshold ${strategyConfig.adxThreshold}"
-                !atrCheck -> "ATR ($atr) outside volatility range"
-                !sellPullback -> "No valid pullback to EMA band"
-                !sellNotExtended -> "Price overextended from EMA20"
-                !isBearishCandle -> "Closed candle not bearish"
-                !spreadCheck -> "Spread exceeds limit"
-                !sessionCheck -> "Outside allowed trading session"
-                !riskCheck -> "Risk limit / position / emergency active"
-                else -> "All entry criteria satisfied"
-            }
-        )
-
-        if (sellExplanation.isAllPassed) {
+        if (bearishBreakout && isBearishCandle) {
             val entryPrice = currentQuote.bid
-            val rawSlDistance = atr * strategyConfig.atrSlMultiplier
-            val minStopDistance = symbolConfig.minimumStopDistance
-            val slDistance = max(rawSlDistance, minStopDistance)
+            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
             val stopLoss = entryPrice + slDistance
-            val riskDistance = stopLoss - entryPrice
-            val takeProfit = entryPrice - (riskDistance * strategyConfig.riskRewardRatio)
+            val takeProfit = entryPrice - slDistance * strategyConfig.riskRewardRatio
+            val riskReward = (entryPrice - takeProfit) / slDistance
 
             return Signal(
                 id = UUID.randomUUID().toString(),
@@ -183,23 +314,482 @@ class TradingStrategy(
                 price = entryPrice,
                 stopLoss = stopLoss,
                 takeProfit = takeProfit,
-                rrRatio = strategyConfig.riskRewardRatio,
+                rrRatio = riskReward,
                 candleTime = lastClosedCandle.openTime,
-                explanation = sellExplanation,
-                strategyVersion = strategyConfig.strategyVersion
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.SELL,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = true,
+                    adxCheck = true,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "SELL",
+                    reason = "Bearish breakout below $lowestLow, ADX >= ${strategyConfig.adxThreshold}, bearish candle confirmation"
+                )
             )
         }
 
         return null
     }
 
-    private fun isSessionAllowed(timestamp: Long): Boolean {
-        if (strategyConfig.sessionStartHour == 0 && strategyConfig.sessionEndHour >= 24) {
-            return true
+    private fun evaluateMeanReversion(
+        closedCandles: List<Candle>,
+        lastClosedCandle: Candle,
+        prevClosedCandle: Candle,
+        indicators: IndicatorValues,
+        symbolConfig: SymbolConfig,
+        currentQuote: Quote,
+        riskCheck: Boolean,
+        sessionCheck: Boolean,
+        spreadCheck: Boolean,
+        atr: Double
+    ): Signal? {
+        val emaFast = indicators.emaFast
+        val emaSlow = indicators.emaSlow
+        val adx = indicators.adx
+        val rsi = indicators.rsi
+        val bbUpper = indicators.bbUpper
+        val bbMiddle = indicators.bbMiddle
+        val bbLower = indicators.bbLower
+
+        if (adx >= 25.0) return null
+
+        val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
+        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
+
+        val oversoldCondition = rsi < strategyConfig.rsiOversold && lastClosedCandle.close < bbLower
+        val overboughtCondition = rsi > strategyConfig.rsiOverbought && lastClosedCandle.close > bbUpper
+
+        if (oversoldCondition && isBullishCandle) {
+            val entryPrice = currentQuote.ask
+            val slDistance = max(atr * 1.5, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice - slDistance
+            val takeProfit = bbMiddle
+            val tpDistance = abs(takeProfit - entryPrice)
+            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.BUY,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.BUY,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = false,
+                    adxCheck = adx < 25.0,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "BUY",
+                    reason = "RSI($rsi) < ${strategyConfig.rsiOversold}, Close < BB Lower($bbLower), ADX($adx) < 25, bullish reversal candle"
+                )
+            )
         }
-        val cal = Calendar.getInstance(TimeZone.getTimeZone(strategyConfig.timezone))
-        cal.timeInMillis = timestamp
-        val hour = cal.get(Calendar.HOUR_OF_DAY)
-        return hour in strategyConfig.sessionStartHour until strategyConfig.sessionEndHour
+
+        if (overboughtCondition && isBearishCandle) {
+            val entryPrice = currentQuote.bid
+            val slDistance = max(atr * 1.5, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice + slDistance
+            val takeProfit = bbMiddle
+            val tpDistance = abs(entryPrice - takeProfit)
+            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.SELL,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.SELL,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = false,
+                    adxCheck = adx < 25.0,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "SELL",
+                    reason = "RSI($rsi) > ${strategyConfig.rsiOverbought}, Close > BB Upper($bbUpper), ADX($adx) < 25, bearish reversal candle"
+                )
+            )
+        }
+
+        return null
     }
+
+    private fun evaluateMomentum(
+        closedCandles: List<Candle>,
+        lastClosedCandle: Candle,
+        prevClosedCandle: Candle,
+        indicators: IndicatorValues,
+        prevIndicators: IndicatorValues?,
+        symbolConfig: SymbolConfig,
+        currentQuote: Quote,
+        riskCheck: Boolean,
+        sessionCheck: Boolean,
+        spreadCheck: Boolean,
+        atr: Double
+    ): Signal? {
+        val emaFast = indicators.emaFast
+        val emaSlow = indicators.emaSlow
+        val adx = indicators.adx
+        val macdHistogram = indicators.macdHistogram
+
+        if (adx < strategyConfig.momentumAdxThreshold) return null
+
+        val prevMacdHistogram = prevIndicators?.macdHistogram
+
+        val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
+        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
+
+        val bullishMomentum = macdHistogram > 0 && prevMacdHistogram != null && macdHistogram > prevMacdHistogram
+        val bearishMomentum = macdHistogram < 0 && prevMacdHistogram != null && macdHistogram < prevMacdHistogram
+
+        val bullishTrend = emaFast > emaSlow && lastClosedCandle.close > emaFast
+        val bearishTrend = emaFast < emaSlow && lastClosedCandle.close < emaFast
+
+        if (bullishMomentum && bullishTrend && isBullishCandle) {
+            val entryPrice = currentQuote.ask
+            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice - slDistance
+            val takeProfit = entryPrice + slDistance * strategyConfig.riskRewardRatio
+            val riskReward = (takeProfit - entryPrice) / slDistance
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.BUY,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.BUY,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = true,
+                    adxCheck = true,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "BUY",
+                    reason = "MACD histogram positive($macdHistogram) and increasing, ADX($adx) >= ${strategyConfig.momentumAdxThreshold}, bullish trend, bullish candle"
+                )
+            )
+        }
+
+        if (bearishMomentum && bearishTrend && isBearishCandle) {
+            val entryPrice = currentQuote.bid
+            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice + slDistance
+            val takeProfit = entryPrice - slDistance * strategyConfig.riskRewardRatio
+            val riskReward = (entryPrice - takeProfit) / slDistance
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.SELL,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.SELL,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = true,
+                    adxCheck = true,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "SELL",
+                    reason = "MACD histogram negative($macdHistogram) and decreasing, ADX($adx) >= ${strategyConfig.momentumAdxThreshold}, bearish trend, bearish candle"
+                )
+            )
+        }
+
+        return null
+    }
+
+    private fun evaluateRangeTrading(
+        closedCandles: List<Candle>,
+        lastClosedCandle: Candle,
+        prevClosedCandle: Candle,
+        indicators: IndicatorValues,
+        symbolConfig: SymbolConfig,
+        currentQuote: Quote,
+        riskCheck: Boolean,
+        sessionCheck: Boolean,
+        spreadCheck: Boolean,
+        atr: Double
+    ): Signal? {
+        val emaFast = indicators.emaFast
+        val emaSlow = indicators.emaSlow
+        val adx = indicators.adx
+        val stochasticK = indicators.stochK
+
+        if (adx >= strategyConfig.rangeAdxMax) return null
+
+        val lookback = min(strategyConfig.rangeLookbackPeriod, closedCandles.size - 1)
+        val lookbackCandles = closedCandles.dropLast(1).takeLast(lookback)
+        if (lookbackCandles.size < strategyConfig.rangeLookbackPeriod) return null
+
+        val rangeHigh = lookbackCandles.maxOf { it.high }
+        val rangeLow = lookbackCandles.minOf { it.low }
+        val rangeSize = rangeHigh - rangeLow
+
+        if (rangeSize >= atr * 3) return null
+
+        val nearRangeLow = lastClosedCandle.low <= rangeLow + atr * 0.3
+        val nearRangeHigh = lastClosedCandle.high >= rangeHigh - atr * 0.3
+
+        val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
+        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
+
+        if (nearRangeLow && stochasticK < 30 && isBullishCandle) {
+            val entryPrice = currentQuote.ask
+            val slDistance = max(atr * 1.0, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice - slDistance
+            val rangeMidpoint = (rangeHigh + rangeLow) / 2.0
+            val takeProfit = min(rangeMidpoint, entryPrice + slDistance * strategyConfig.riskRewardRatio)
+            val tpDistance = abs(takeProfit - entryPrice)
+            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.BUY,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.BUY,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = false,
+                    adxCheck = adx < strategyConfig.rangeAdxMax,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "BUY",
+                    reason = "Range detected ($rangeLow-$$rangeHigh), ADX($adx) < ${strategyConfig.rangeAdxMax}, near range low, stochastic($stochasticK) < 30, bullish candle"
+                )
+            )
+        }
+
+        if (nearRangeHigh && stochasticK > 70 && isBearishCandle) {
+            val entryPrice = currentQuote.bid
+            val slDistance = max(atr * 1.0, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice + slDistance
+            val rangeMidpoint = (rangeHigh + rangeLow) / 2.0
+            val takeProfit = max(rangeMidpoint, entryPrice - slDistance * strategyConfig.riskRewardRatio)
+            val tpDistance = abs(entryPrice - takeProfit)
+            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.SELL,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.SELL,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = adx,
+                    atr = atr,
+                    trendCheck = false,
+                    adxCheck = adx < strategyConfig.rangeAdxMax,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "SELL",
+                    reason = "Range detected ($rangeLow-$$rangeHigh), ADX($adx) < ${strategyConfig.rangeAdxMax}, near range high, stochastic($stochasticK) > 70, bearish candle"
+                )
+            )
+        }
+
+        return null
+    }
+
+    private fun evaluateScalping(
+        closedCandles: List<Candle>,
+        lastClosedCandle: Candle,
+        prevClosedCandle: Candle,
+        indicators: IndicatorValues,
+        prevIndicators: IndicatorValues?,
+        symbolConfig: SymbolConfig,
+        currentQuote: Quote,
+        riskCheck: Boolean,
+        sessionCheck: Boolean,
+        spreadCheck: Boolean,
+        atr: Double
+    ): Signal? {
+        val emaFast = indicators.emaFast
+        val emaSlow = indicators.emaSlow
+        val stochasticK = indicators.stochK
+        val stochasticD = indicators.stochD
+
+        val prevStochasticK = prevIndicators?.stochK
+        val prevStochasticD = prevIndicators?.stochD
+
+        if (prevStochasticK == null || prevStochasticD == null) return null
+
+        val bodySize = abs(lastClosedCandle.close - lastClosedCandle.open)
+        val isStrongBullish = lastClosedCandle.close > lastClosedCandle.open && bodySize > atr * 0.5
+        val isStrongBearish = lastClosedCandle.close < lastClosedCandle.open && bodySize > atr * 0.5
+
+        val bullishCross = stochasticK > stochasticD && prevStochasticK <= prevStochasticD && prevStochasticD < 50
+        val bearishCross = stochasticK < stochasticD && prevStochasticK >= prevStochasticD && prevStochasticD > 50
+
+        if (isStrongBullish && bullishCross && lastClosedCandle.close > emaFast && emaFast > emaSlow) {
+            val entryPrice = currentQuote.ask
+            val slDistance = max(atr * 0.8, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice - slDistance
+            val takeProfit = entryPrice + slDistance * strategyConfig.scalpMinRr
+            val riskReward = (takeProfit - entryPrice) / slDistance
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.BUY,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.BUY,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = indicators.adx,
+                    atr = atr,
+                    trendCheck = true,
+                    adxCheck = false,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "BUY",
+                    reason = "Strong bullish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses above D($stochasticD), price > EMA Fast, bullish trend"
+                )
+            )
+        }
+
+        if (isStrongBearish && bearishCross && lastClosedCandle.close < emaFast && emaFast < emaSlow) {
+            val entryPrice = currentQuote.bid
+            val slDistance = max(atr * 0.8, symbolConfig.minimumStopDistance)
+            val stopLoss = entryPrice + slDistance
+            val takeProfit = entryPrice - slDistance * strategyConfig.scalpMinRr
+            val riskReward = (entryPrice - takeProfit) / slDistance
+
+            return Signal(
+                id = UUID.randomUUID().toString(),
+                symbol = symbolConfig.symbol,
+                direction = TradeDirection.SELL,
+                price = entryPrice,
+                stopLoss = stopLoss,
+                takeProfit = takeProfit,
+                rrRatio = riskReward,
+                candleTime = lastClosedCandle.openTime,
+                timestamp = System.currentTimeMillis(),
+                explanation = SignalExplanation(
+                    symbol = symbolConfig.symbol,
+                    direction = TradeDirection.SELL,
+                    emaFast = emaFast,
+                    emaSlow = emaSlow,
+                    adx = indicators.adx,
+                    atr = atr,
+                    trendCheck = true,
+                    adxCheck = false,
+                    pullbackCheck = false,
+                    candleCheck = true,
+                    spreadCheck = spreadCheck,
+                    riskCheck = riskCheck,
+                    sessionCheck = sessionCheck,
+                    decision = "SELL",
+                    reason = "Strong bearish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses below D($stochasticD), price < EMA Fast, bearish trend"
+                )
+            )
+        }
+
+        return null
+    }
+
+    private fun isSessionAllowed(openTime: Long): Boolean {
+        val calendar = Calendar.getInstance(TimeZone.getTimeZone(strategyConfig.timezone))
+        calendar.timeInMillis = openTime
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        return hour >= strategyConfig.sessionStartHour && hour < strategyConfig.sessionEndHour
+    }
+}
+
+interface NewsFilter {
+    fun isNewsFreeWindow(timestamp: Long, symbol: String): Boolean
+}
+
+class NoNewsFilter : NewsFilter {
+    override fun isNewsFreeWindow(timestamp: Long, symbol: String): Boolean = true
 }

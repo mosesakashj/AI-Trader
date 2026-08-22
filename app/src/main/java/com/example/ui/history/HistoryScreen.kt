@@ -27,6 +27,23 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
 
+fun formatTradeDuration(millis: Long): String {
+    val totalMinutes = millis / 60_000
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours > 0 -> "${hours}h ${minutes}m"
+        minutes > 0 -> "${minutes}m"
+        else -> "<1m"
+    }
+}
+
+fun formatDistance(distance: Double, symbol: String): String {
+    val pipMultiplier = if (symbol.contains("JPY")) 100.0 else 10000.0
+    val pips = distance * pipMultiplier
+    return "${if (pips >= 0) "+" else ""}${"%.1f".format(pips)} pips"
+}
+
 @Composable
 fun HistoryScreen() {
     val repository = EdgeTraderApp.instance.repository
@@ -41,6 +58,19 @@ fun HistoryScreen() {
     val grossLoss = abs(closedTrades.filter { it.profit < 0 }.sumOf { it.profit })
     val profitFactor = if (grossLoss > 0) grossProfit / grossLoss else if (grossProfit > 0) 9.99 else 0.0
     val avgR = if (totalTrades > 0) closedTrades.sumOf { it.profitR } / totalTrades else 0.0
+
+    val expectancy = if (totalTrades > 0) totalPnl / totalTrades else 0.0
+    val bestTrade = closedTrades.maxByOrNull { it.profit }
+    val worstTrade = closedTrades.minByOrNull { it.profit }
+
+    val buyTrades = closedTrades.filter { it.direction == TradeDirection.BUY }
+    val sellTrades = closedTrades.filter { it.direction == TradeDirection.SELL }
+    val buyWinCount = buyTrades.count { it.profit > 0 }
+    val sellWinCount = sellTrades.count { it.profit > 0 }
+    val buyWinRate = if (buyTrades.isNotEmpty()) (buyWinCount.toDouble() / buyTrades.size) * 100.0 else 0.0
+    val sellWinRate = if (sellTrades.isNotEmpty()) (sellWinCount.toDouble() / sellTrades.size) * 100.0 else 0.0
+    val buyTotalPnl = buyTrades.sumOf { it.profit }
+    val sellTotalPnl = sellTrades.sumOf { it.profit }
 
     val dateFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
 
@@ -97,6 +127,103 @@ fun HistoryScreen() {
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    MetricCard(
+                        title = "Expectancy",
+                        value = "${if (expectancy >= 0) "+" else ""}$${"%.2f".format(expectancy)}",
+                        subtitle = "Avg per trade",
+                        valueColor = if (expectancy >= 0) EmeraldGain else CrimsonLoss,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricCard(
+                        title = "Best Trade",
+                        value = "$${"%.2f".format(bestTrade?.profit ?: 0.0)}",
+                        subtitle = bestTrade?.symbol ?: "--",
+                        valueColor = EmeraldGain,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricCard(
+                        title = "Worst Trade",
+                        value = "$${"%.2f".format(worstTrade?.profit ?: 0.0)}",
+                        subtitle = worstTrade?.symbol ?: "--",
+                        valueColor = CrimsonLoss,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        // Performance by Direction
+        if (totalTrades > 0) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Performance by Direction", fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    color = EmeraldContainer,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "BUY",
+                                        color = EmeraldDark,
+                                        fontWeight = FontWeight.Black,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("${"%.1f".format(buyWinRate)}% win", color = TextPrimary, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "${if (buyTotalPnl >= 0) "+" else ""}$${"%.2f".format(buyTotalPnl)}",
+                                    color = if (buyTotalPnl >= 0) EmeraldGain else CrimsonLoss,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    color = CrimsonContainer,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "SELL",
+                                        color = CrimsonDark,
+                                        fontWeight = FontWeight.Black,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("${"%.1f".format(sellWinRate)}% win", color = TextPrimary, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "${if (sellTotalPnl >= 0) "+" else ""}$${"%.2f".format(sellTotalPnl)}",
+                                    color = if (sellTotalPnl >= 0) EmeraldGain else CrimsonLoss,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -134,6 +261,8 @@ fun HistoryScreen() {
         } else {
             items(closedTrades, key = { it.id }) { trade ->
                 val isWin = trade.profit >= 0
+                val durationMillis = (trade.closedAt ?: System.currentTimeMillis()) - trade.openedAt
+                val priceDistance = (trade.closePrice ?: trade.entryPrice) - trade.entryPrice
                 Card(
                     colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                     shape = RoundedCornerShape(16.dp),
@@ -190,12 +319,25 @@ fun HistoryScreen() {
                                 Text("${trade.entryPrice} → ${trade.closePrice ?: trade.entryPrice}", style = MaterialTheme.typography.bodySmall, color = TextPrimary, fontFamily = FontFamily.Monospace)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("Reason", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(trade.closeReason?.name ?: "MANUAL", style = MaterialTheme.typography.bodySmall, color = if (isWin) EmeraldGain else CrimsonLoss)
+                                Text("Move", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(formatDistance(priceDistance, trade.symbol), style = MaterialTheme.typography.bodySmall, color = if (isWin) EmeraldGain else CrimsonLoss, fontFamily = FontFamily.Monospace)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Duration", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(formatTradeDuration(durationMillis), style = MaterialTheme.typography.bodySmall, color = TextPrimary, fontFamily = FontFamily.Monospace)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Reason", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(trade.closeReason?.name ?: "MANUAL", style = MaterialTheme.typography.bodySmall, color = if (isWin) EmeraldGain else CrimsonLoss)
+                            }
+                        }
                         Text(
                             text = "Opened: ${dateFormat.format(Date(trade.openedAt))} | Closed: ${trade.closedAt?.let { dateFormat.format(Date(it)) } ?: "--"}",
                             style = MaterialTheme.typography.labelSmall,

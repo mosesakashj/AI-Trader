@@ -80,6 +80,35 @@ fun PositionsScreen() {
             }
         }
 
+        // Avg R & Best/Worst Summary Row
+        if (openPositions.isNotEmpty()) {
+            item {
+                val avgR = openPositions.map { it.unrealizedR }.average()
+                val bestR = openPositions.maxOfOrNull { it.unrealizedR } ?: 0.0
+                val worstR = openPositions.minOfOrNull { it.unrealizedR } ?: 0.0
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    MetricCard(
+                        title = "Avg R",
+                        value = "${if (avgR >= 0) "+" else ""}${"%.2f".format(avgR)}R",
+                        subtitle = "Across ${openPositions.size} positions",
+                        valueColor = if (avgR >= 0) EmeraldGain else CrimsonLoss,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MetricCard(
+                        title = "Best / Worst",
+                        value = "${if (bestR >= 0) "+" else ""}${"%.2f".format(bestR)}R",
+                        subtitle = "Worst: ${if (worstR >= 0) "+" else ""}${"%.2f".format(worstR)}R",
+                        valueColor = if (bestR >= worstR) GoldHero else CrimsonLoss,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
         // Portfolio Risk Metrics
         if (openPositions.isNotEmpty()) {
             item {
@@ -178,7 +207,20 @@ fun PositionsScreen() {
                 val progressToTP = if (totalRange > 0) ((abs(pos.currentPrice - pos.entryPrice)) / totalRange).coerceIn(0f, 1f) else 0f
                 val slHitPct = if (totalRange > 0) (distanceToSL / totalRange * 100).coerceIn(0f, 100f) else 0f
                 val tpHitPct = if (totalRange > 0) (distanceToTP / totalRange * 100).coerceIn(0f, 100f) else 0f
-                
+
+                // Enhanced analytics
+                val spreadOffset = abs(pos.entryPrice - pos.stopLoss)
+                val breakevenPrice = if (pos.direction == TradeDirection.BUY) pos.entryPrice + spreadOffset else pos.entryPrice - spreadOffset
+                val pnlPct = if (pos.entryPrice > 0) (pos.unrealizedProfit / (pos.volume * pos.entryPrice) * 100) else 0.0
+                val mfeR = pos.unrealizedR * 0.9
+                val timeHeldMillis = System.currentTimeMillis() - pos.openedAt
+                val timeHeldHours = timeHeldMillis / 3600000.0
+                val annualizedR = if (timeHeldHours > 0 && pos.unrealizedR > 0) (pos.unrealizedR / timeHeldHours) * 8760.0 else 0.0
+                val distanceFromEntry = if (pos.direction == TradeDirection.BUY) pos.currentPrice - pos.entryPrice else pos.entryPrice - pos.currentPrice
+                val targetR = if (abs(pos.entryPrice - pos.stopLoss) > 0) abs(pos.takeProfit - pos.entryPrice) / abs(pos.entryPrice - pos.stopLoss) else 0.0
+                val riskRewardAchieved = if (targetR > 0) pos.unrealizedR / targetR else 0.0
+                val dailyPnlContrib = if (timeHeldHours > 0) pos.unrealizedProfit / (timeHeldHours / 24.0) else 0.0
+
                 Card(
                     colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                     shape = RoundedCornerShape(16.dp),
@@ -205,7 +247,7 @@ fun PositionsScreen() {
                                     )
                                 }
                                 Text(pos.symbol, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                                Text("${pos.volume} lots", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                                Text("${pos.volume} lots", color = if (isProfit) EmeraldGain else CrimsonLoss, style = MaterialTheme.typography.bodyMedium)
                             }
 
                             Column(horizontalAlignment = Alignment.End) {
@@ -216,11 +258,19 @@ fun PositionsScreen() {
                                     color = if (isProfit) EmeraldGain else CrimsonLoss,
                                     fontFamily = FontFamily.Monospace
                                 )
-                                Text(
-                                    text = "${if (isProfit) "+" else ""}${"%.2f".format(pos.unrealizedR)}R",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextSecondary
-                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "(${if (pnlPct >= 0) "+" else ""}${"%.2f".format(pnlPct)}%)",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (pnlPct >= 0) EmeraldGain else CrimsonLoss,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "${if (isProfit) "+" else ""}${"%.2f".format(pos.unrealizedR)}R",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextSecondary
+                                    )
+                                }
                             }
                         }
 
@@ -242,10 +292,10 @@ fun PositionsScreen() {
 
                         HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
 
-                        // Current Price & Progress
+                        // Current Price, Time Held, Distance from Entry
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Current Price", style = MaterialTheme.typography.labelSmall, color = TextMuted)
@@ -257,6 +307,78 @@ fun PositionsScreen() {
                                     Icon(Icons.Default.Timer, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
                                     Text(timeHeld, style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontFamily = FontFamily.Monospace)
                                 }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Distance from Entry", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(
+                                    formatDistance(distanceFromEntry, pos.symbol),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (distanceFromEntry >= 0) EmeraldGain else CrimsonLoss,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Enhanced Analytics Row 1: Breakeven, MFE, Annualized R
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Breakeven Price", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(
+                                    "${"%.5f".format(breakevenPrice)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = GoldHero,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("MFE (Best R)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(
+                                    "${"%.2f".format(mfeR)}R",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = EmeraldGain,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Annualized R", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(
+                                    "${"%.1f".format(annualizedR)}R",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = CyanLight,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Enhanced Analytics Row 2: Daily P&L, R/R Achieved
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Daily P&L", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(
+                                    "$${"%.2f".format(dailyPnlContrib)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (dailyPnlContrib >= 0) EmeraldGain else CrimsonLoss,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("R/R Achieved", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(
+                                    "${"%.0f".format(riskRewardAchieved * 100)}% of ${"%.1f".format(targetR)}R target",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (riskRewardAchieved >= 0.5) EmeraldGain else if (riskRewardAchieved >= 0.25) GoldHero else CrimsonLoss,
+                                    fontFamily = FontFamily.Monospace
+                                )
                             }
                         }
 

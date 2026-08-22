@@ -298,6 +298,7 @@ class TradingEngine(
         engineJob?.cancel()
         engineJob = null
         watchdogManager.stop()
+        stopPeriodicReconciliation()
         _connectionState.value = ConnectionState.OFFLINE
         stateMachine.transitionTo(StateMachineState.STOPPED, reason)
 
@@ -737,6 +738,10 @@ class TradingEngine(
         repository.logEvent(LogLevel.INFO, "TradingEngine", "SAFE_MODE_CLEARED", "Operator cleared safe mode")
     }
 
+    suspend fun reconcilePositions(): ReconciliationResult {
+        return positionReconciler.reconcileAndRepair()
+    }
+
     private suspend fun recoverEngine() {
         repository.logEvent(LogLevel.WARN, "TradingEngine", "AUTO_RECOVERY", "Executing automated engine recovery sequence")
         stop("Watchdog recovery restart")
@@ -761,13 +766,32 @@ class TradingEngine(
         strategy = TradingStrategy(
             StrategyConfig(
                 strategyVersion = config.strategyVersion,
+                strategyType = runCatching { StrategyType.valueOf(config.strategyType) }.getOrDefault(StrategyType.PULLBACK),
                 emaFastPeriod = config.emaFastPeriod,
                 emaSlowPeriod = config.emaSlowPeriod,
                 adxPeriod = config.adxPeriod,
                 adxThreshold = config.adxThreshold,
                 atrPeriod = config.atrPeriod,
                 atrSlMultiplier = config.atrSlMultiplier,
-                riskRewardRatio = config.riskRewardRatio
+                riskRewardRatio = config.riskRewardRatio,
+                maxCandleExtensionAtr = config.maxCandleExtensionAtr,
+                breakoutLookbackPeriod = config.breakoutLookbackPeriod,
+                breakoutVolumeMultiplier = config.breakoutVolumeMultiplier,
+                breakoutConfirmCandles = config.breakoutConfirmCandles,
+                rsiPeriod = config.rsiPeriod,
+                rsiOverbought = config.rsiOverbought,
+                rsiOversold = config.rsiOversold,
+                bbPeriod = config.bbPeriod,
+                bbStdDev = config.bbStdDev,
+                macdFastPeriod = config.macdFastPeriod,
+                macdSlowPeriod = config.macdSlowPeriod,
+                macdSignalPeriod = config.macdSignalPeriod,
+                momentumAdxThreshold = config.momentumAdxThreshold,
+                rangeLookbackPeriod = config.rangeLookbackPeriod,
+                rangeMinTouches = config.rangeMinTouches,
+                rangeAdxMax = config.rangeAdxMax,
+                scalpMinRr = config.scalpMinRr,
+                scalpMaxHoldMinutes = config.scalpMaxHoldMinutes
             )
         )
         riskManager = RiskManager(
