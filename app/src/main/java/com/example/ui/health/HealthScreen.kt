@@ -132,10 +132,25 @@ fun HealthScreen() {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Safe Mode Supervisor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Text(
-                        "Safe Mode is triggered when unexpected position mismatches, repeated recovery failures, or critical exceptions occur.",
+                        "Safe Mode is triggered when unexpected position mismatches, repeated recovery failures, or critical exceptions occur. Auto-repair attempts to sync local DB with broker positions before entering Safe Mode.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
+
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                engine.reconcilePositions()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0A2540)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().height(44.dp).testTag("health_reconcile_btn")
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = EmeraldGain)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Manual Position Reconcile", color = EmeraldGain, fontWeight = FontWeight.Bold)
+                    }
 
                     Button(
                         onClick = {

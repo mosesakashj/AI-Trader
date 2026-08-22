@@ -506,12 +506,11 @@ fun SettingsScreen(
 
                     Text("Commodities & Crypto:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                     
-                    LazyColumn(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(0.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(availableSymbols.take(2)) { (symbol, displayName) ->
+                        availableSymbols.take(2).forEach { (symbol, displayName) ->
                             val isEnabled = monitoredPairs.contains(symbol)
                             val assetType = when (symbol) {
                                 "XAUUSD" -> AssetType.COMMODITY
@@ -571,12 +570,11 @@ fun SettingsScreen(
 
                     Text("Major Forex Pairs:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                     
-                    LazyColumn(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(0.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(availableSymbols.drop(2)) { (symbol, displayName) ->
+                        availableSymbols.drop(2).forEach { (symbol, displayName) ->
                             val isEnabled = monitoredPairs.contains(symbol)
                             Row(
                                 modifier = Modifier

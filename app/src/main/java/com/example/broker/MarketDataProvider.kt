@@ -107,6 +107,8 @@ class PaperMarketDataProvider : MarketDataProvider {
         subscribedSymbols.remove(symbol)
     }
 
+    private val liveRng = Random(42)
+
     override fun quotes(): Flow<Quote> = flow {
         var step = 0
         while (true) {
@@ -142,38 +144,35 @@ class PaperMarketDataProvider : MarketDataProvider {
         }
     }
 
+    private val candleCache = ConcurrentHashMap<String, List<Candle>>()
+
     override suspend fun getHistoricalCandles(
         symbol: String,
         timeframe: Timeframe,
         count: Int
     ): List<Candle> {
+        val cacheKey = "${symbol}_${timeframe.name}_$count"
+        candleCache[cacheKey]?.let { return it }
+
         val symConfig = SymbolCatalog.get(symbol)
         val candles = mutableListOf<Candle>()
         var price = currentPrices[symbol] ?: SymbolCatalog.getInitialQuote(symbol).ask
-        val volatility = when (symbol) {
-            "BTCUSD" -> 85.0
-            "ETHUSD" -> 6.5
-            "SOLUSD" -> 0.8
-            "XAUUSD" -> 1.8
-            "USOIL" -> 0.35
-            "USDJPY" -> 0.15
-            "EURUSD" -> 0.0006
-            "GBPUSD" -> 0.0008
-            else -> 0.5
-        }
+        val volatility = historicalVolatilityMap[symbol] ?: 0.5
         val intervalMillis = timeframe.minutes * 60 * 1000L
         val now = System.currentTimeMillis()
         val startTime = now - (count * intervalMillis)
 
+        val seed = (symbol.hashCode().toLong() + timeframe.minutes.toLong() * 1000 + count)
+        val rng = Random(seed)
+
         for (i in 0 until count) {
             val openTime = startTime + (i * intervalMillis)
             val open = price
-            // Drift + trend components
-            val change = (Random.nextDouble() - 0.48) * volatility * 2.0
+            val change = (rng.nextDouble() - 0.48) * volatility * 2.0
             val close = open + change
-            val high = maxOf(open, close) + Random.nextDouble(symConfig.tickSize, volatility)
-            val low = minOf(open, close) - Random.nextDouble(symConfig.tickSize, volatility)
-            val volume = Random.nextDouble(50.0, 500.0)
+            val high = maxOf(open, close) + rng.nextDouble(symConfig.tickSize, volatility)
+            val low = minOf(open, close) - rng.nextDouble(symConfig.tickSize, volatility)
+            val volume = rng.nextDouble(50.0, 500.0)
 
             candles.add(
                 Candle(
@@ -191,6 +190,7 @@ class PaperMarketDataProvider : MarketDataProvider {
             price = close
         }
 
+        candleCache[cacheKey] = candles
         return candles
     }
 }

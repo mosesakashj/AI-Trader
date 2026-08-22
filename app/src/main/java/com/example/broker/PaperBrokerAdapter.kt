@@ -154,7 +154,12 @@ class PaperBrokerAdapter(
 
     override suspend fun closePosition(positionId: String, reason: CloseReason): OrderResult {
         val position = openPositions.remove(positionId)
-            ?: return OrderResult(success = false, errorMessage = "Position $positionId not found")
+        if (position == null) {
+            return OrderResult(
+                success = false,
+                errorMessage = "Position $positionId not found"
+            )
+        }
 
         val quote = getQuote(position.symbol)
         val exitPrice = if (position.direction == TradeDirection.BUY) quote.bid else quote.ask

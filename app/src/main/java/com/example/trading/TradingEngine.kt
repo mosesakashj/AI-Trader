@@ -444,44 +444,92 @@ class TradingEngine(
         val openPositions = repository.getOpenPositions()
         val pos = openPositions.find { it.id == positionId } ?: return false
         val res = activeBroker.closePosition(positionId, reason)
-        if (res.success) {
-            repository.removePosition(positionId)
-            val closedTrade = Trade(
-                id = pos.id,
-                symbol = pos.symbol,
-                direction = pos.direction,
-                volume = pos.volume,
-                entryPrice = pos.entryPrice,
-                stopLoss = pos.stopLoss,
-                takeProfit = pos.takeProfit,
-                riskAmount = 0.0,
-                riskPercent = 0.25,
-                rr = 2.0,
-                openedAt = pos.openedAt,
-                closedAt = System.currentTimeMillis(),
-                closePrice = res.executedPrice,
-                profit = pos.unrealizedProfit,
-                profitR = pos.unrealizedR,
-                status = TradeStatus.CLOSED,
-                closeReason = reason,
-                mode = activeBroker.mode
-            )
-            repository.recordTrade(closedTrade)
-            notificationManager.notifyTradeClosed(closedTrade)
+
+        if (!res.success) {
+            val errorMsg = res.errorMessage ?: ""
+            val isNotFound = errorMsg.contains("not found", ignoreCase = true)
+            if (isNotFound) {
+                repository.logEvent(
+                    LogLevel.WARN,
+                    "TradingEngine",
+                    "POSITION_STALE_CLEANUP",
+                    "Position $positionId not found in broker, cleaning up stale DB entry",
+                    pos.symbol
+                )
+                repository.removePosition(positionId)
+                val closedTrade = Trade(
+                    id = pos.id,
+                    symbol = pos.symbol,
+                    direction = pos.direction,
+                    volume = pos.volume,
+                    entryPrice = pos.entryPrice,
+                    stopLoss = pos.stopLoss,
+                    takeProfit = pos.takeProfit,
+                    riskAmount = 0.0,
+                    riskPercent = 0.25,
+                    rr = 2.0,
+                    openedAt = pos.openedAt,
+                    closedAt = System.currentTimeMillis(),
+                    closePrice = pos.currentPrice,
+                    profit = pos.unrealizedProfit,
+                    profitR = pos.unrealizedR,
+                    status = TradeStatus.CLOSED,
+                    closeReason = CloseReason.EXPIRED,
+                    mode = activeBroker.mode
+                )
+                repository.recordTrade(closedTrade)
+                notificationManager.notifyTradeClosed(closedTrade)
+                val remaining = repository.getOpenPositions()
+                if (remaining.isEmpty() && stateMachine.currentState.value == StateMachineState.POSITION_OPEN) {
+                    stateMachine.transitionTo(StateMachineState.READY, "Stale position cleaned up")
+                }
+                return true
+            }
             repository.logEvent(
-                LogLevel.INFO,
+                LogLevel.ERROR,
                 "TradingEngine",
-                "POSITION_CLOSED_MANUAL",
-                "Closed position on ${pos.symbol} at ${res.executedPrice}, P/L: $${"%.2f".format(pos.unrealizedProfit)}",
+                "POSITION_CLOSE_FAILED",
+                "Failed to close position on broker: $errorMsg",
                 pos.symbol
             )
-            val remaining = repository.getOpenPositions()
-            if (remaining.isEmpty() && stateMachine.currentState.value == StateMachineState.POSITION_OPEN) {
-                stateMachine.transitionTo(StateMachineState.READY, "Position closed")
-            }
-            return true
+            return false
         }
-        return false
+
+        repository.removePosition(positionId)
+        val closedTrade = Trade(
+            id = pos.id,
+            symbol = pos.symbol,
+            direction = pos.direction,
+            volume = pos.volume,
+            entryPrice = pos.entryPrice,
+            stopLoss = pos.stopLoss,
+            takeProfit = pos.takeProfit,
+            riskAmount = 0.0,
+            riskPercent = 0.25,
+            rr = 2.0,
+            openedAt = pos.openedAt,
+            closedAt = System.currentTimeMillis(),
+            closePrice = res.executedPrice,
+            profit = pos.unrealizedProfit,
+            profitR = pos.unrealizedR,
+            status = TradeStatus.CLOSED,
+            closeReason = reason,
+            mode = activeBroker.mode
+        )
+        repository.recordTrade(closedTrade)
+        notificationManager.notifyTradeClosed(closedTrade)
+        repository.logEvent(
+            LogLevel.INFO,
+            "TradingEngine",
+            "POSITION_CLOSED_MANUAL",
+            "Closed position on ${pos.symbol} at ${res.executedPrice}, P/L: $${"%.2f".format(pos.unrealizedProfit)}",
+            pos.symbol
+        )
+        val remaining = repository.getOpenPositions()
+        if (remaining.isEmpty() && stateMachine.currentState.value == StateMachineState.POSITION_OPEN) {
+            stateMachine.transitionTo(StateMachineState.READY, "Position closed")
+        }
+        return true
     }
 
     fun isSymbolEnabled(symbol: String): Boolean {
@@ -702,31 +750,42 @@ class TradingEngine(
         val openPositions = repository.getOpenPositions()
         openPositions.forEach { pos ->
             val res = activeBroker.closePosition(pos.id, CloseReason.EMERGENCY_STOP)
-            if (res.success) {
-                repository.removePosition(pos.id)
-                val closedTrade = Trade(
-                    id = pos.id,
-                    symbol = pos.symbol,
-                    direction = pos.direction,
-                    volume = pos.volume,
-                    entryPrice = pos.entryPrice,
-                    stopLoss = pos.stopLoss,
-                    takeProfit = pos.takeProfit,
-                    riskAmount = 0.0,
-                    riskPercent = 0.25,
-                    rr = 2.0,
-                    openedAt = pos.openedAt,
-                    closedAt = System.currentTimeMillis(),
-                    closePrice = res.executedPrice,
-                    profit = pos.unrealizedProfit,
-                    profitR = pos.unrealizedR,
-                    status = TradeStatus.CLOSED,
-                    closeReason = CloseReason.EMERGENCY_STOP,
-                    mode = activeBroker.mode
-                )
-                repository.recordTrade(closedTrade)
-                notificationManager.notifyTradeClosed(closedTrade)
+            if (!res.success) {
+                val errorMsg = res.errorMessage ?: ""
+                val isNotFound = errorMsg.contains("not found", ignoreCase = true)
+                if (isNotFound) {
+                    repository.logEvent(
+                        LogLevel.WARN,
+                        "TradingEngine",
+                        "POSITION_STALE_CLEANUP",
+                        "Stale position ${pos.id} not found in broker, cleaning up",
+                        pos.symbol
+                    )
+                }
             }
+            repository.removePosition(pos.id)
+            val closedTrade = Trade(
+                id = pos.id,
+                symbol = pos.symbol,
+                direction = pos.direction,
+                volume = pos.volume,
+                entryPrice = pos.entryPrice,
+                stopLoss = pos.stopLoss,
+                takeProfit = pos.takeProfit,
+                riskAmount = 0.0,
+                riskPercent = 0.25,
+                rr = 2.0,
+                openedAt = pos.openedAt,
+                closedAt = System.currentTimeMillis(),
+                closePrice = res.executedPrice,
+                profit = pos.unrealizedProfit,
+                profitR = pos.unrealizedR,
+                status = TradeStatus.CLOSED,
+                closeReason = CloseReason.EMERGENCY_STOP,
+                mode = activeBroker.mode
+            )
+            repository.recordTrade(closedTrade)
+            notificationManager.notifyTradeClosed(closedTrade)
         }
         stateMachine.transitionTo(StateMachineState.READY, "All positions liquidated")
     }
