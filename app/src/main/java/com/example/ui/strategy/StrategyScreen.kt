@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.EdgeTraderApp
 import com.example.domain.model.StrategyType
+import com.example.domain.model.TradeMode
 import com.example.ui.components.FactorChip
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -84,6 +85,18 @@ fun StrategyScreen() {
     var trailingStopTriggerR by remember(config) { mutableStateOf(config?.trailingStopTriggerR?.toString() ?: "1.2") }
     var trailingStopDistanceAtr by remember(config) { mutableStateOf(config?.trailingStopDistanceAtr?.toString() ?: "1.0") }
     var earlyExitOnTrendReversal by remember(config) { mutableStateOf(config?.earlyExitOnTrendReversal ?: true) }
+
+    // Adaptive TP/SL/BE toggles
+    var adaptiveTpEnabled by remember(config) { mutableStateOf(config?.adaptiveTpEnabled ?: true) }
+    var adaptiveSlEnabled by remember(config) { mutableStateOf(config?.adaptiveSlEnabled ?: true) }
+    var adaptiveBeEnabled by remember(config) { mutableStateOf(config?.adaptiveBeEnabled ?: true) }
+
+    // Trade Mode
+    var tradeMode by remember(config) {
+        mutableStateOf(
+            try { TradeMode.valueOf(config?.tradeMode ?: "BALANCED") } catch (_: Exception) { TradeMode.BALANCED }
+        )
+    }
 
     var saveStatus by remember { mutableStateOf("") }
 
@@ -164,6 +177,73 @@ fun StrategyScreen() {
                                 )
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // Trade Mode Selector
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Trade Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = CyanLight)
+                    Text("Pre-configured risk profiles that adjust TP, SL, BE, and position sizing automatically.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TradeMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = tradeMode == mode,
+                                onClick = {
+                                    tradeMode = mode
+                                    coroutineScope.launch {
+                                        val current = repository.getOrCreateConfig()
+                                        repository.updateConfig(current.copy(tradeMode = mode.name))
+                                    }
+                                },
+                                label = { Text(mode.displayName, style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = when (mode) {
+                                        TradeMode.CONSERVATIVE -> EmeraldGain.copy(alpha = 0.15f)
+                                        TradeMode.BALANCED -> CyanLight.copy(alpha = 0.15f)
+                                        TradeMode.AGGRESSIVE -> GoldHero.copy(alpha = 0.15f)
+                                    },
+                                    selectedLabelColor = when (mode) {
+                                        TradeMode.CONSERVATIVE -> EmeraldGain
+                                        TradeMode.BALANCED -> CyanLight
+                                        TradeMode.AGGRESSIVE -> GoldHero
+                                    },
+                                    containerColor = SurfaceVariantDark,
+                                    labelColor = TextSecondary
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    borderColor = CardBorderDark,
+                                    selectedBorderColor = when (mode) {
+                                        TradeMode.CONSERVATIVE -> EmeraldGain
+                                        TradeMode.BALANCED -> CyanLight
+                                        TradeMode.AGGRESSIVE -> GoldHero
+                                    },
+                                    enabled = true,
+                                    selected = tradeMode == mode
+                                )
+                            )
+                        }
+                    }
+
+                    val modeDescription = when (tradeMode) {
+                        TradeMode.CONSERVATIVE -> "Risk 0.15% | SL 2.0x ATR | TP 2.5R | BE@0.5R | Wider stops, earlier break-even"
+                        TradeMode.BALANCED -> "Risk 0.25% | SL 1.5x ATR | TP 2.0R | BE@0.8R | Default risk/reward profile"
+                        TradeMode.AGGRESSIVE -> "Risk 0.50% | SL 1.0x ATR | TP 1.5R | BE@1.2R | Tighter stops, more trades"
+                    }
+                    Surface(color = SurfaceVariantDark, shape = RoundedCornerShape(8.dp)) {
+                        Text(modeDescription, style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(10.dp))
                     }
                 }
             }
@@ -647,6 +727,79 @@ fun StrategyScreen() {
                         }
                     }
 
+                    // Adaptive TP/SL/BE Section
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Adaptive TP/SL/BE", fontWeight = FontWeight.Bold, color = CyanLight, style = MaterialTheme.typography.bodyMedium)
+                            Text("Automatically adjusts Stop Loss, Take Profit, and Break-Even based on ATR volatility and ADX trend strength.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // Adaptive SL
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = if (adaptiveSlEnabled) CyanContainer else SurfaceDark),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Adaptive SL", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.labelSmall)
+                                        Text("ATR+ADX", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                        Switch(
+                                            checked = adaptiveSlEnabled,
+                                            onCheckedChange = { adaptiveSlEnabled = it },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = CyanLight, checkedTrackColor = CyanContainer)
+                                        )
+                                    }
+                                }
+                                // Adaptive TP
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = if (adaptiveTpEnabled) EmeraldContainer else SurfaceDark),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Adaptive TP", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.labelSmall)
+                                        Text("ATR+ADX", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                        Switch(
+                                            checked = adaptiveTpEnabled,
+                                            onCheckedChange = { adaptiveTpEnabled = it },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = EmeraldGain, checkedTrackColor = EmeraldContainer)
+                                        )
+                                    }
+                                }
+                                // Adaptive BE
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = if (adaptiveBeEnabled) GoldContainer else SurfaceDark),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Adaptive BE", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.labelSmall)
+                                        Text("ATR+ADX", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                        Switch(
+                                            checked = adaptiveBeEnabled,
+                                            onCheckedChange = { adaptiveBeEnabled = it },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = GoldHero, checkedTrackColor = GoldContainer)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Surface(color = SurfaceDark, shape = RoundedCornerShape(6.dp)) {
+                                val adaptiveDesc = buildString {
+                                    if (adaptiveSlEnabled) append("SL widens in strong trends, tightens in weak markets. ")
+                                    if (adaptiveTpEnabled) append("TP targets higher in trends, conservative in ranges. ")
+                                    if (adaptiveBeEnabled) append("BE triggers earlier in strong moves, later in weak markets.")
+                                    if (isBlank()) append("All adaptive features disabled. Using fixed parameters.")
+                                }
+                                Text(adaptiveDesc.trim(), style = MaterialTheme.typography.bodySmall, color = TextMuted, modifier = Modifier.padding(8.dp))
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Button(
@@ -704,13 +857,17 @@ fun StrategyScreen() {
                                 }
 
                                 val fullConfig = baseUpdated.copy(
+                                    tradeMode = tradeMode.name,
                                     breakEvenEnabled = breakEvenEnabled,
                                     breakEvenTriggerR = breakEvenTriggerR.toDoubleOrNull() ?: 0.8,
                                     breakEvenBufferPips = breakEvenBufferPips.toDoubleOrNull() ?: 1.5,
                                     trailingStopEnabled = trailingStopEnabled,
                                     trailingStopTriggerR = trailingStopTriggerR.toDoubleOrNull() ?: 1.2,
                                     trailingStopDistanceAtr = trailingStopDistanceAtr.toDoubleOrNull() ?: 1.0,
-                                    earlyExitOnTrendReversal = earlyExitOnTrendReversal
+                                    earlyExitOnTrendReversal = earlyExitOnTrendReversal,
+                                    adaptiveTpEnabled = adaptiveTpEnabled,
+                                    adaptiveSlEnabled = adaptiveSlEnabled,
+                                    adaptiveBeEnabled = adaptiveBeEnabled
                                 )
 
                                 repository.updateConfig(fullConfig)

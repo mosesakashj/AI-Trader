@@ -122,8 +122,15 @@ class TradePlanScannerViewModel(
             kotlinx.coroutines.runBlocking { engine.repository.getOrCreateConfig() }
         }.getOrNull()
 
+        val tradeMode = try {
+            com.example.domain.model.TradeMode.valueOf(config?.tradeMode ?: "BALANCED")
+        } catch (_: Exception) {
+            com.example.domain.model.TradeMode.BALANCED
+        }
+
         return StrategyConfig(
             strategyType = strategyType,
+            tradeMode = tradeMode,
             emaFastPeriod = config?.emaFastPeriod ?: 20,
             emaSlowPeriod = config?.emaSlowPeriod ?: 50,
             adxPeriod = config?.adxPeriod ?: 14,
@@ -155,7 +162,10 @@ class TradePlanScannerViewModel(
             trailingStopEnabled = config?.trailingStopEnabled ?: true,
             trailingStopTriggerR = config?.trailingStopTriggerR ?: 1.2,
             trailingStopDistanceAtr = config?.trailingStopDistanceAtr ?: 1.0,
-            earlyExitOnTrendReversal = config?.earlyExitOnTrendReversal ?: true
+            earlyExitOnTrendReversal = config?.earlyExitOnTrendReversal ?: true,
+            adaptiveTpEnabled = config?.adaptiveTpEnabled ?: true,
+            adaptiveSlEnabled = config?.adaptiveSlEnabled ?: true,
+            adaptiveBeEnabled = config?.adaptiveBeEnabled ?: true
         )
     }
 }

@@ -7,9 +7,7 @@ import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.model.*
 import com.example.domain.model.toClosedTrade
 import com.example.domain.risk.RiskManager
-import com.example.domain.strategy.NewsFilter
-import com.example.domain.strategy.NoNewsFilter
-import com.example.domain.strategy.TradingStrategy
+import com.example.domain.strategy.*
 import com.example.notifications.AppNotificationManager
 import com.example.watchdog.WatchdogManager
 import kotlinx.coroutines.*
@@ -116,7 +114,9 @@ class TradingEngine(
 
         // Seed historical candles for enabled symbols only
         enabledSymbols.forEach { symbol ->
-            val historical = marketDataProvider.getHistoricalCandles(symbol, Timeframe.M15, 80)
+            val symConfig = symbolConfigs[symbol]
+            val timeframe = symConfig?.preferredTimeframe ?: Timeframe.M15
+            val historical = marketDataProvider.getHistoricalCandles(symbol, timeframe, 80)
             candlesMap[symbol] = historical.toMutableList()
             // Subscribe to market data for this symbol
             marketDataProvider.subscribe(symbol)
@@ -387,6 +387,10 @@ class TradingEngine(
         val symbolConfig = symbolConfigs[quote.symbol] ?: return
         val candles = candlesMap[quote.symbol] ?: emptyList()
         val atr = if (candles.size >= 14) IndicatorCalculator.computeLatest(candles)?.atr ?: (symbolConfig.tickSize * 20.0) else (symbolConfig.tickSize * 20.0)
+        val adx = if (candles.size >= 14) IndicatorCalculator.computeLatest(candles)?.adx ?: 25.0 else 25.0
+
+        val tradeMode = runCatching { TradeMode.valueOf(config.tradeMode) }.getOrDefault(TradeMode.BALANCED)
+        val modePreset = TradeModePresets.getPreset(tradeMode)
 
         openPositions.forEach { pos ->
             val markPrice = if (pos.direction == TradeDirection.BUY) quote.bid else quote.ask
@@ -397,40 +401,64 @@ class TradingEngine(
             val riskDist = abs(pos.entryPrice - pos.stopLoss)
             val unrealizedR = if (riskDist > 0) priceDiff / riskDist else 0.0
 
+            // Compute adaptive parameters
+            val beTriggerR = AdaptiveCalculator.adaptiveBeTriggerR(
+                baseTriggerR = config.breakEvenTriggerR,
+                adx = adx,
+                adxThreshold = config.adxThreshold,
+                enabled = config.adaptiveBeEnabled
+            )
+            val beBufferPips = AdaptiveCalculator.adaptiveBeBufferPips(
+                baseBufferPips = config.breakEvenBufferPips,
+                atr = atr,
+                tickSize = symbolConfig.tickSize,
+                adx = adx,
+                adxThreshold = config.adxThreshold,
+                enabled = config.adaptiveBeEnabled
+            )
+            val trailingDistance = AdaptiveCalculator.adaptiveTrailingDistance(
+                atr = atr,
+                baseDistanceAtr = config.trailingStopDistanceAtr,
+                adx = adx,
+                adxThreshold = config.adxThreshold,
+                tickSize = symbolConfig.tickSize,
+                enabled = config.adaptiveBeEnabled
+            )
+
             var updatedSL = pos.stopLoss
             var slChanged = false
             var slReason = ""
 
-            // 1. Break-Even Protection: Trigger once profit reaches breakEvenTriggerR (e.g. +0.8R)
-            if (config.breakEvenEnabled && unrealizedR >= config.breakEvenTriggerR) {
-                val bufferPipsDistance = (config.breakEvenBufferPips * symbolConfig.tickSize * 10.0).coerceAtLeast(symbolConfig.spreadLimit * 0.2)
+            // 1. Break-Even Protection: Trigger once profit reaches adaptive breakEvenTriggerR
+            if (config.breakEvenEnabled && unrealizedR >= beTriggerR) {
+                val bufferPipsDistance = (beBufferPips * symbolConfig.tickSize * 10.0).coerceAtLeast(symbolConfig.spreadLimit * 0.2)
                 if (pos.direction == TradeDirection.BUY && pos.stopLoss < pos.entryPrice) {
                     updatedSL = pos.entryPrice + bufferPipsDistance
                     slChanged = true
-                    slReason = "Break-Even secured at +${"%.2f".format(unrealizedR)}R (SL at +${config.breakEvenBufferPips} pips buffer)"
+                    slReason = "Break-Even secured at +${"%.2f".format(unrealizedR)}R (SL at +${"%.1f".format(beBufferPips)} pips buffer, BE@${"%.2f".format(beTriggerR)}R)"
                 } else if (pos.direction == TradeDirection.SELL && pos.stopLoss > pos.entryPrice) {
                     updatedSL = pos.entryPrice - bufferPipsDistance
                     slChanged = true
-                    slReason = "Break-Even secured at +${"%.2f".format(unrealizedR)}R (SL at -${config.breakEvenBufferPips} pips buffer)"
+                    slReason = "Break-Even secured at +${"%.2f".format(unrealizedR)}R (SL at -${"%.1f".format(beBufferPips)} pips buffer, BE@${"%.2f".format(beTriggerR)}R)"
                 }
             }
 
-            // 2. Dynamic Trailing Stop: Trailing price once profit reaches trailingStopTriggerR (e.g. +1.2R)
-            if (config.trailingStopEnabled && unrealizedR >= config.trailingStopTriggerR) {
-                val trailDistance = (atr * config.trailingStopDistanceAtr).coerceAtLeast(symbolConfig.tickSize * 25.0)
+            // 2. Dynamic Trailing Stop: Trailing price once profit reaches mode-based trailingStopTriggerR
+            val trailingTriggerR = modePreset.trailingStopTriggerR
+            if (config.trailingStopEnabled && unrealizedR >= trailingTriggerR) {
                 if (pos.direction == TradeDirection.BUY) {
-                    val candidateSL = quote.bid - trailDistance
+                    val candidateSL = quote.bid - trailingDistance
                     if (candidateSL > updatedSL) {
                         updatedSL = candidateSL
                         slChanged = true
-                        slReason = "Trailing Stop ratcheted to ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)} (+${"%.2f".format(unrealizedR)}R)"
+                        slReason = "Trailing Stop ratcheted to ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)} (+${"%.2f".format(unrealizedR)}R, trail dist: ${"%.1f".format(trailingDistance)})"
                     }
                 } else {
-                    val candidateSL = quote.ask + trailDistance
+                    val candidateSL = quote.ask + trailingDistance
                     if (candidateSL < updatedSL) {
                         updatedSL = candidateSL
                         slChanged = true
-                        slReason = "Trailing Stop ratcheted to ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)} (+${"%.2f".format(unrealizedR)}R)"
+                        slReason = "Trailing Stop ratcheted to ${SymbolCatalog.formatPrice(pos.symbol, updatedSL)} (+${"%.2f".format(unrealizedR)}R, trail dist: ${"%.1f".format(trailingDistance)})"
                     }
                 }
             }
@@ -558,10 +586,13 @@ class TradingEngine(
         val lastProcessedTime = lastProcessedCandleTimes[symbol] ?: 0L
 
         val config = repository.getOrCreateConfig()
+        val tradeMode = runCatching { TradeMode.valueOf(config.tradeMode) }.getOrDefault(TradeMode.BALANCED)
+        val modePreset = TradeModePresets.getPreset(tradeMode)
+
         val riskConfig = RiskConfig(
-            defaultRiskPercent = config.defaultRiskPercent,
+            defaultRiskPercent = modePreset.riskPercent,
             maxDailyLossPercent = config.maxDailyLossPercent,
-            maxConsecutiveLosses = config.maxConsecutiveLosses,
+            maxConsecutiveLosses = modePreset.maxConsecutiveLosses,
             maxOpenPositions = config.maxOpenPositions,
             emergencyStopActive = config.emergencyStop,
             safeModeActive = config.safeMode,
@@ -629,7 +660,7 @@ class TradingEngine(
             stateMachine.transitionTo(StateMachineState.EXECUTING, "Sending ${signal.direction} order")
             val volume = riskManager.calculatePositionSize(
                 equity = _currentAccount.value.equity,
-                riskPercent = config.defaultRiskPercent,
+                riskPercent = modePreset.riskPercent,
                 entryPrice = signal.price,
                 stopLossPrice = signal.stopLoss,
                 symbolConfig = symbolConfig
@@ -678,7 +709,7 @@ class TradingEngine(
                     stopLoss = signal.stopLoss,
                     takeProfit = signal.takeProfit,
                     riskAmount = validation.theoreticalRisk,
-                    riskPercent = config.defaultRiskPercent,
+                    riskPercent = modePreset.riskPercent,
                     rr = signal.rrRatio,
                     openedAt = System.currentTimeMillis(),
                     status = TradeStatus.OPEN,
@@ -721,10 +752,12 @@ class TradingEngine(
         openPositionsCount: Int
     ) {
         val config = repository.getOrCreateConfig()
+        val tradeMode = runCatching { TradeMode.valueOf(config.tradeMode) }.getOrDefault(TradeMode.BALANCED)
+        val modePreset = TradeModePresets.getPreset(tradeMode)
         val riskConfig = RiskConfig(
-            defaultRiskPercent = config.defaultRiskPercent,
+            defaultRiskPercent = modePreset.riskPercent,
             maxDailyLossPercent = config.maxDailyLossPercent,
-            maxConsecutiveLosses = config.maxConsecutiveLosses,
+            maxConsecutiveLosses = modePreset.maxConsecutiveLosses,
             maxOpenPositions = config.maxOpenPositions,
             emergencyStopActive = config.emergencyStop,
             safeModeActive = config.safeMode,
@@ -792,7 +825,9 @@ class TradingEngine(
 
         val last = list.last()
         val now = System.currentTimeMillis()
-        val timeframeMillis = 15 * 60 * 1000L // M15
+        val symConfig = symbolConfigs[quote.symbol]
+        val timeframe = symConfig?.preferredTimeframe ?: Timeframe.M15
+        val timeframeMillis = timeframe.minutes * 60 * 1000L
 
         if (now - last.openTime >= timeframeMillis) {
             // Close previous candle and open new candle
@@ -800,7 +835,7 @@ class TradingEngine(
             list.add(
                 Candle(
                     symbol = quote.symbol,
-                    timeframe = Timeframe.M15,
+                    timeframe = timeframe,
                     openTime = now,
                     open = quote.ask,
                     high = quote.ask,
@@ -907,6 +942,7 @@ class TradingEngine(
         return TradePlan(
             signal = signal,
             strategyType = strategyType,
+            tradeMode = runCatching { TradeMode.valueOf(config.tradeMode) }.getOrDefault(TradeMode.BALANCED),
             symbolConfig = symbolConfig,
             currentQuote = quote,
             indicators = indicators,
@@ -1019,7 +1055,8 @@ class TradingEngine(
     fun getCandles(symbol: String): List<Candle> = candlesMap[symbol]?.toList() ?: emptyList()
 
     suspend fun fetchHistoricalCandles(symbol: String, timeframe: Timeframe, count: Int = 80): List<Candle> {
-        val candles = marketDataProvider.getHistoricalCandles(symbol, timeframe, count)
+        val effectiveTimeframe = symbolConfigs[symbol]?.preferredTimeframe ?: timeframe
+        val candles = marketDataProvider.getHistoricalCandles(symbol, effectiveTimeframe, count)
         if (candles.isNotEmpty()) {
             candlesMap[symbol] = candles.toMutableList()
         }
@@ -1029,10 +1066,14 @@ class TradingEngine(
     fun getMarketSession(symbol: String): MarketSessionInfo = MarketScheduleUtils.getMarketSession(symbol)
 
     private fun updateConfigurationsFromEntity(config: BotConfigEntity) {
+        val tradeMode = runCatching { TradeMode.valueOf(config.tradeMode) }.getOrDefault(TradeMode.BALANCED)
+        val modePreset = TradeModePresets.getPreset(tradeMode)
+
         strategy = TradingStrategy(
             StrategyConfig(
                 strategyVersion = config.strategyVersion,
                 strategyType = runCatching { StrategyType.valueOf(config.strategyType) }.getOrDefault(StrategyType.PULLBACK),
+                tradeMode = tradeMode,
                 emaFastPeriod = config.emaFastPeriod,
                 emaSlowPeriod = config.emaSlowPeriod,
                 adxPeriod = config.adxPeriod,
@@ -1057,14 +1098,24 @@ class TradingEngine(
                 rangeMinTouches = config.rangeMinTouches,
                 rangeAdxMax = config.rangeAdxMax,
                 scalpMinRr = config.scalpMinRr,
-                scalpMaxHoldMinutes = config.scalpMaxHoldMinutes
+                scalpMaxHoldMinutes = config.scalpMaxHoldMinutes,
+                breakEvenEnabled = config.breakEvenEnabled,
+                breakEvenTriggerR = config.breakEvenTriggerR,
+                breakEvenBufferPips = config.breakEvenBufferPips,
+                trailingStopEnabled = config.trailingStopEnabled,
+                trailingStopTriggerR = config.trailingStopTriggerR,
+                trailingStopDistanceAtr = config.trailingStopDistanceAtr,
+                earlyExitOnTrendReversal = config.earlyExitOnTrendReversal,
+                adaptiveTpEnabled = config.adaptiveTpEnabled,
+                adaptiveSlEnabled = config.adaptiveSlEnabled,
+                adaptiveBeEnabled = config.adaptiveBeEnabled
             )
         )
         riskManager = RiskManager(
             RiskConfig(
-                defaultRiskPercent = config.defaultRiskPercent,
+                defaultRiskPercent = modePreset.riskPercent,
                 maxDailyLossPercent = config.maxDailyLossPercent,
-                maxConsecutiveLosses = config.maxConsecutiveLosses,
+                maxConsecutiveLosses = modePreset.maxConsecutiveLosses,
                 maxOpenPositions = config.maxOpenPositions,
                 emergencyStopActive = config.emergencyStop,
                 safeModeActive = config.safeMode,
@@ -1072,10 +1123,41 @@ class TradingEngine(
             )
         )
 
+        // Apply per-symbol timeframes from config
+        applySymbolTimeframes(config)
+
         StrategyType.entries.forEach { type ->
             val cfg = StrategyConfig(strategyType = type)
             shadowStrategies[type] = TradingStrategy(cfg)
             shadowSignalsAccumulator[type] = mutableListOf()
+        }
+    }
+
+    private fun applySymbolTimeframes(config: BotConfigEntity) {
+        val timeframeOverrides = mapOf(
+            "XAUUSD" to config.xauusdTimeframe,
+            "BTCUSD" to config.btcusdTimeframe,
+            "ETHUSD" to config.ethusdTimeframe,
+            "SOLUSD" to config.solusdTimeframe,
+            "USOIL" to config.usoilTimeframe,
+            "EURUSD" to config.eurusdTimeframe,
+            "GBPUSD" to config.gbpusdTimeframe,
+            "USDJPY" to config.usdjpyTimeframe,
+            "AUDUSD" to config.audusdTimeframe,
+            "USDCAD" to config.usdcadTimeframe,
+            "USDCHF" to config.usdchfTimeframe,
+            "NZDUSD" to config.nzdusdTimeframe,
+            "EURGBP" to config.eurgbpTimeframe,
+            "EURJPY" to config.eurjpyTimeframe,
+            "GBPJPY" to config.gbpjpyTimeframe
+        )
+
+        for ((symbol, tfString) in timeframeOverrides) {
+            if (tfString.isNullOrBlank()) continue
+            val tf = runCatching { Timeframe.valueOf(tfString) }.getOrNull() ?: continue
+            symbolConfigs[symbol]?.let {
+                symbolConfigs[symbol] = it.copy(preferredTimeframe = tf)
+            }
         }
     }
 }
