@@ -31,6 +31,7 @@ import com.example.ui.history.HistoryScreen
 import com.example.ui.logs.LogsScreen
 import com.example.ui.markets.MarketsScreen
 import com.example.ui.navigation.Screen
+import com.example.ui.news.NewsScreen
 import com.example.ui.navigation.bottomNavItems
 import com.example.ui.navigation.drawerNavItems
 import com.example.ui.positions.PositionsScreen
@@ -210,6 +211,9 @@ class MainActivity : ComponentActivity() {
                                 }
                                 composable(Screen.Strategy.route) {
                                     StrategyScreen()
+                                }
+                                composable(Screen.News.route) {
+                                    NewsScreen()
                                 }
                                 composable(Screen.Positions.route) {
                                     PositionsScreen()

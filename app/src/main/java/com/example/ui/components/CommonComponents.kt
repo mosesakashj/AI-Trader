@@ -16,14 +16,17 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -294,4 +297,159 @@ fun MiniCandleChart(
             )
         }
     }
+}
+
+@Composable
+fun ShimmerBox(
+    modifier: Modifier = Modifier,
+    cornerRadius: RoundedCornerShape = RoundedCornerShape(12.dp)
+) {
+    val shimmerColors = listOf(
+        SurfaceVariantDark,
+        SurfaceDark,
+        SurfaceVariantDark
+    )
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnim = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer_translate"
+    )
+
+    val brush = Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset.Zero,
+        end = Offset(x = translateAnim.value, y = translateAnim.value)
+    )
+
+    Box(
+        modifier = modifier
+            .clip(cornerRadius)
+            .background(brush)
+    )
+}
+
+@Composable
+fun ShimmerCard(
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, CardBorderDark),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            ShimmerBox(modifier = Modifier.fillMaxWidth().height(20.dp))
+            ShimmerBox(modifier = Modifier.fillMaxWidth(0.6f).height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ShimmerBox(modifier = Modifier.weight(1f).height(48.dp))
+                ShimmerBox(modifier = Modifier.weight(1f).height(48.dp))
+            }
+            ShimmerBox(modifier = Modifier.fillMaxWidth().height(14.dp))
+        }
+    }
+}
+
+@Composable
+fun SectionHeader(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: Color = CyanLight,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+        }
+        if (actionLabel != null && onAction != null) {
+            TextButton(onClick = onAction) {
+                Text(actionLabel, color = CyanLight, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+fun StreakIndicator(
+    streak: Int,
+    modifier: Modifier = Modifier
+) {
+    val isWinStreak = streak > 0
+    val absStreak = kotlin.math.abs(streak)
+    val color = if (isWinStreak) EmeraldGain else CrimsonLoss
+    val label = if (isWinStreak) "Win" else "Loss"
+
+    Surface(
+        color = color.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f)),
+        modifier = modifier
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Surface(
+                color = color,
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = "$absStreak",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+            Text(
+                text = "${label}${if (absStreak > 1) "s" else ""}",
+                style = MaterialTheme.typography.labelSmall,
+                color = color,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+fun AnimatedEntry(
+    visible: Boolean = true,
+    delay: Int = 0,
+    content: @Composable () -> Unit
+) {
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 300, delayMillis = delay),
+        label = "entry_alpha"
+    )
+    Box(modifier = Modifier.alpha(alpha)) {
+        content()
+    }
+}
+
+private fun Modifier.alpha(alpha: Float): Modifier {
+    return this.then(
+        Modifier.graphicsLayer(alpha = alpha)
+    )
 }

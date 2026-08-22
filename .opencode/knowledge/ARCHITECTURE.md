@@ -3,41 +3,17 @@
 ## Project Structure
 ```
 app/src/main/java/com/example/
-├── broker/                 # Market data & broker adapters
-│   ├── BrokerAdapter.kt    # Interface for broker operations
-│   ├── DemoBrokerAdapter.kt
-│   ├── LiveBrokerAdapter.kt
-│   ├── PaperBrokerAdapter.kt
-│   ├── MarketDataProvider.kt
-│   ├── MarketScheduleUtils.kt
-│   └── RealTimeMarketDataProvider.kt
-├── data/
-│   ├── database/           # Room database
-│   ├── entities/           # Room entities
-│   └── repositories/       # Repository layer
-├── domain/
-│   ├── backtest/           # Backtesting engine
-│   ├── indicators/         # Technical indicators
-│   ├── model/              # Domain models & enums
-│   ├── risk/               # Risk management
-│   └── strategy/           # Trading strategy
-├── notifications/          # Notification system
-├── security/               # Secure storage
-├── trading/                # Trading engine
-├── ui/
-│   ├── backtest/           # Backtest screen
-│   ├── components/         # Reusable UI components
-│   ├── dashboard/          # Dashboard screen
-│   ├── health/             # System health screen
-│   ├── history/            # Trade history screen
-│   ├── logs/               # System logs screen
-│   ├── markets/            # Markets screen
-│   ├── navigation/         # Navigation definitions
-│   ├── positions/          # Positions screen
-│   ├── risk/               # Risk management screen
-│   ├── settings/           # Settings screen
-│   └── strategy/           # Strategy configuration screen
-└── watchdog/               # Health monitoring
+├── ai/                  # LLM provider integrations
+├── broker/              # Market data & broker adapters
+├── data/                # Room database, DAOs, entities, repositories
+├── di/                  # Hilt dependency injection modules
+├── domain/              # Strategy logic, indicators, risk management, backtesting
+├── notifications/       # Android + Telegram notification system
+├── security/            # AES-256-GCM encrypted key storage
+├── service/             # Foreground service, boot receiver
+├── trading/             # Core engine, state machine, position reconciler
+├── ui/                  # Jetpack Compose screens
+└── watchdog/            # Auto-recovery watchdog
 ```
 
 ## Core Components
@@ -84,6 +60,20 @@ app/src/main/java/com/example/
 - Backtest: Standard + Walk-forward validation
 - Settings: Mode, broker, telegram, battery optimization
 - History, Health, Logs, Risk, Security
+
+## Dependency Injection (Hilt)
+
+The app uses Hilt for dependency injection. Key modules:
+
+- `DatabaseModule` - Provides Room database and DAOs
+- `AppModule` - Provides SecureStorage, Repository, NotificationManager, TradingEngine, AiManager
+
+Entry points:
+- `@HiltAndroidApp` on `EdgeTraderApp` (Application class)
+- `@AndroidEntryPoint` on `MainActivity`, `TradingForegroundService`, `BootReceiver`
+- `@HiltViewModel` on `DashboardViewModel`
+
+The `EdgeTraderApp.instance` singleton is maintained for backward compatibility with screens that haven't been migrated to constructor-injected ViewModels yet.
 
 ## Current Symbol Support
 - XAUUSD (Gold Spot) - Commodity

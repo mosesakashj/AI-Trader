@@ -22,6 +22,8 @@ import com.example.domain.model.AssetType
 import com.example.domain.model.Candle
 import com.example.domain.model.SymbolCatalog
 import com.example.domain.model.Timeframe
+import com.example.data.api.MarketInsightsRepository
+import com.example.ui.components.ExpectedMovementCard
 import com.example.ui.components.InteractiveCandleChart
 import com.example.ui.theme.*
 
@@ -75,6 +77,16 @@ fun MarketsScreen() {
         if (activeCandles.size >= 30) {
             IndicatorCalculator.computeLatest(activeCandles)
         } else null
+    }
+
+    val insightsRepo = remember { MarketInsightsRepository() }
+
+    val expectedMove = remember(activeCandles, selectedSymbol) {
+        insightsRepo.computeExpectedMoves(selectedSymbol, quote, activeCandles)
+    }
+
+    val (supports, resistances) = remember(activeCandles) {
+        insightsRepo.computeSupportResistance(activeCandles)
     }
 
     LazyColumn(
@@ -376,6 +388,140 @@ fun MarketsScreen() {
                                         color = if (isBullish) EmeraldGain else CrimsonLoss
                                     )
                                     Text("20 > 50 EMA", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Expected Movement Card
+        if (expectedMove != null) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    modifier = Modifier.fillMaxWidth().testTag("expected_move_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Expected Movement",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        ExpectedMovementCard(expectedMove = expectedMove!!)
+                    }
+                }
+            }
+        }
+
+        // 7. Support & Resistance Levels
+        if (supports.isNotEmpty() || resistances.isNotEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    modifier = Modifier.fillMaxWidth().testTag("support_resistance_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Support & Resistance Levels",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+
+                        val currentPrice = quote?.ask ?: SymbolCatalog.getInitialQuote(selectedSymbol).ask
+
+                        // Current Price Marker
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Current Price", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text(
+                                    SymbolCatalog.formatPrice(selectedSymbol, currentPrice),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        // Resistance Levels (from highest to lowest)
+                        if (resistances.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Resistance", style = MaterialTheme.typography.labelSmall, color = CrimsonLoss, fontWeight = FontWeight.Bold)
+                                resistances.sortedDescending().forEach { level ->
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(100.dp),
+                                                color = CrimsonLoss.copy(alpha = 0.15f),
+                                                modifier = Modifier.size(10.dp)
+                                            ) {}
+                                            Text(
+                                                SymbolCatalog.formatPrice(selectedSymbol, level),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = CrimsonLoss,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Support Levels (from highest to lowest)
+                        if (supports.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Support", style = MaterialTheme.typography.labelSmall, color = EmeraldGain, fontWeight = FontWeight.Bold)
+                                supports.sortedDescending().forEach { level ->
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(100.dp),
+                                                color = EmeraldGain.copy(alpha = 0.15f),
+                                                modifier = Modifier.size(10.dp)
+                                            ) {}
+                                            Text(
+                                                SymbolCatalog.formatPrice(selectedSymbol, level),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = EmeraldGain,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

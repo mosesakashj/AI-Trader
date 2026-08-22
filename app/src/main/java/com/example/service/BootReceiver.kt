@@ -3,22 +3,24 @@ package com.example.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.EdgeTraderApp
+import com.example.data.repositories.TradingRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.TradingMode
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
+
+    @Inject lateinit var repository: TradingRepository
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == "android.intent.action.QUICKBOOT_POWERON") {
             CoroutineScope(Dispatchers.Default).launch {
                 try {
-                    val repository = EdgeTraderApp.instance.repository
                     val config = repository.getOrCreateConfig()
 
                     repository.logEvent(
@@ -28,7 +30,6 @@ class BootReceiver : BroadcastReceiver() {
                         message = "Device reboot detected. Checking persisted bot state (Enabled: ${config.isBotEnabled}, Mode: ${config.mode})"
                     )
 
-                    // Safety constraint: Never auto-start LIVE trading without explicit user re-confirmation
                     val isLive = config.mode == TradingMode.LIVE.name
                     if (config.isBotEnabled && !config.emergencyStop && !config.safeMode && !isLive) {
                         repository.logEvent(

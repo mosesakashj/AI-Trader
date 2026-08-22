@@ -22,7 +22,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.EdgeTraderApp
 import com.example.broker.MarketScheduleUtils
+import com.example.data.api.MarketInsightsRepository
 import com.example.domain.model.*
 import com.example.ui.components.*
 import com.example.ui.theme.*
@@ -42,6 +44,17 @@ fun DashboardScreen(
     val latestSignal by viewModel.latestSignal.collectAsStateWithLifecycle()
     val dailyPnl by viewModel.dailyPnl.collectAsStateWithLifecycle()
     val openPositions by viewModel.openPositions.collectAsStateWithLifecycle()
+
+    val insightsRepo = remember { MarketInsightsRepository() }
+    val trending by insightsRepo.trending.collectAsState()
+    val news by insightsRepo.news.collectAsState()
+    val economicEvents by insightsRepo.economicEvents.collectAsState()
+    val sentiment by insightsRepo.sentiment.collectAsState()
+    LaunchedEffect(Unit) { insightsRepo.refreshAll() }
+
+    val repository = EdgeTraderApp.instance.repository
+    val allTrades by repository.allTradesFlow.collectAsState(initial = emptyList())
+    val perfStats = remember(allTrades) { computePerformanceStats(allTrades) }
 
     var showEmergencyDialog by remember { mutableStateOf(false) }
     var showCloseAllDialog by remember { mutableStateOf(false) }
@@ -89,7 +102,6 @@ fun DashboardScreen(
                             ModeBadge(mode = mode)
                         }
 
-                        // Engine Toggle Switch
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = if (isBotRunning) "ACTIVE" else "OFF",
@@ -121,7 +133,6 @@ fun DashboardScreen(
                         )
                     }
 
-                    // Emergency Stop Banner Button
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(
                         onClick = { showEmergencyDialog = true },
@@ -245,7 +256,6 @@ fun DashboardScreen(
                     }
                 }
 
-                // Category Filter Chips
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -351,7 +361,7 @@ fun DashboardScreen(
             }
         }
 
-        // 4. Open Positions Section (with 1-tap close and auto BE/Trailing indicators)
+        // 4. Open Positions Section
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -447,16 +457,15 @@ fun DashboardScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // Auto Position Management Badges
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if (pos.unrealizedR >= 1.0) {
                                         Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
-                                            Text("🛡️ Break-Even Secured", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                            Text("Break-Even Secured", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                         }
                                     }
                                     if (pos.unrealizedR >= 1.5) {
                                         Surface(color = CyanContainer, shape = RoundedCornerShape(4.dp)) {
-                                            Text("🎯 Trailing Active", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                            Text("Trailing Active", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                         }
                                     }
                                 }
@@ -550,6 +559,31 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
+
+        // 6. Market Sentiment
+        item {
+            MarketSentimentBar(sentiment = sentiment)
+        }
+
+        // 7. Trending Movers
+        item {
+            TrendingMoversCard(trending = trending)
+        }
+
+        // 8. News Feed
+        item {
+            NewsFeedCard(articles = news)
+        }
+
+        // 9. Economic Calendar
+        item {
+            EconomicCalendarCard(events = economicEvents)
+        }
+
+        // 10. Performance Dashboard
+        item {
+            PerformanceDashboard(stats = perfStats)
         }
     }
 

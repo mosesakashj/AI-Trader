@@ -8,16 +8,19 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import com.example.EdgeTraderApp
 import com.example.MainActivity
 import com.example.notifications.AndroidNotifier
+import com.example.trading.TradingEngine
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class TradingForegroundService : Service() {
+
+    @Inject lateinit var tradingEngine: TradingEngine
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
@@ -73,7 +76,7 @@ class TradingForegroundService : Service() {
             }
             ACTION_EMERGENCY_STOP -> {
                 serviceScope.launch {
-                    EdgeTraderApp.instance.tradingEngine.triggerEmergencyStop("Foreground Notification Emergency Stop")
+                    tradingEngine.triggerEmergencyStop("Foreground Notification Emergency Stop")
                 }
             }
         }
@@ -81,11 +84,11 @@ class TradingForegroundService : Service() {
     }
 
     private fun startTradingLoop() {
-        EdgeTraderApp.instance.tradingEngine.start()
+        tradingEngine.start()
 
         updateJob?.cancel()
         updateJob = serviceScope.launch {
-            val engine = EdgeTraderApp.instance.tradingEngine
+            val engine = tradingEngine
             val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
             while (isActive) {
@@ -108,7 +111,7 @@ class TradingForegroundService : Service() {
 
     private fun stopTradingLoop() {
         updateJob?.cancel()
-        EdgeTraderApp.instance.tradingEngine.stop("Service stopped")
+        tradingEngine.stop("Service stopped")
     }
 
     private fun buildNotification(contentText: String): Notification {
