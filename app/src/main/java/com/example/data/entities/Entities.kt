@@ -1,12 +1,8 @@
 package com.example.data.entities
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import com.example.domain.model.*
 
-@Entity(tableName = "bot_config")
 data class BotConfigEntity(
-    @PrimaryKey val id: String = "primary_config",
     val mode: String = TradingMode.PAPER.name,
     val isBotEnabled: Boolean = false,
     val emergencyStop: Boolean = false,
