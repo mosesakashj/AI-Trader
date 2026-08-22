@@ -145,19 +145,28 @@ class TradingStrategy(
         val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
         val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
 
+        val adaptive = AdaptiveCalculator.computeAll(
+            atr = atr, adx = adx, adxThreshold = strategyConfig.adxThreshold,
+            baseSlMultiplier = strategyConfig.atrSlMultiplier, baseRiskReward = strategyConfig.riskRewardRatio,
+            baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
+            baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
+            minimumStopDistance = symbolConfig.minimumStopDistance, tickSize = symbolConfig.tickSize,
+            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled, adaptiveTpEnabled = strategyConfig.adaptiveTpEnabled,
+            adaptiveBeEnabled = strategyConfig.adaptiveBeEnabled
+        )
+
         if (isBullishTrend) {
             val pullbackToBand = lastClosedCandle.low <= emaBandUpper
             val notExtended = lastClosedCandle.low >= minExtension
 
             if (pullbackToBand && notExtended && isBullishCandle) {
                 val entryPrice = currentQuote.ask
-                val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
-                val stopLoss = entryPrice - slDistance
-                val takeProfit = entryPrice + slDistance * strategyConfig.riskRewardRatio
-                val riskReward = (takeProfit - entryPrice) / slDistance
+                val stopLoss = entryPrice - adaptive.slDistance
+                val takeProfit = entryPrice + adaptive.tpDistance
+                val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
                 return Signal(
-                    id = UUID.randomUUID().toString(),
+                    id = java.util.UUID.randomUUID().toString(),
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.BUY,
                     price = entryPrice,
@@ -169,19 +178,11 @@ class TradingStrategy(
                     explanation = SignalExplanation(
                         symbol = symbolConfig.symbol,
                         direction = TradeDirection.BUY,
-                        emaFast = emaFast,
-                        emaSlow = emaSlow,
-                        adx = adx,
-                        atr = atr,
-                        trendCheck = true,
-                        adxCheck = true,
-                        pullbackCheck = true,
-                        candleCheck = true,
-                        spreadCheck = spreadCheck,
-                        riskCheck = riskCheck,
-                        sessionCheck = sessionCheck,
+                        emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                        trendCheck = true, adxCheck = true, pullbackCheck = true, candleCheck = true,
+                        spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                         decision = "BUY",
-                        reason = "Bullish trend (EMA Fast > EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bullish candle"
+                        reason = "Bullish trend (EMA Fast > EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bullish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}, BE@${"%.2f".format(adaptive.beTriggerR)}R]"
                     )
                 )
             }
@@ -193,13 +194,12 @@ class TradingStrategy(
 
             if (pullbackToBand && notExtended && isBearishCandle) {
                 val entryPrice = currentQuote.bid
-                val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
-                val stopLoss = entryPrice + slDistance
-                val takeProfit = entryPrice - slDistance * strategyConfig.riskRewardRatio
-                val riskReward = (entryPrice - takeProfit) / slDistance
+                val stopLoss = entryPrice + adaptive.slDistance
+                val takeProfit = entryPrice - adaptive.tpDistance
+                val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
                 return Signal(
-                    id = UUID.randomUUID().toString(),
+                    id = java.util.UUID.randomUUID().toString(),
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.SELL,
                     price = entryPrice,
@@ -211,19 +211,11 @@ class TradingStrategy(
                     explanation = SignalExplanation(
                         symbol = symbolConfig.symbol,
                         direction = TradeDirection.SELL,
-                        emaFast = emaFast,
-                        emaSlow = emaSlow,
-                        adx = adx,
-                        atr = atr,
-                        trendCheck = true,
-                        adxCheck = true,
-                        pullbackCheck = true,
-                        candleCheck = true,
-                        spreadCheck = spreadCheck,
-                        riskCheck = riskCheck,
-                        sessionCheck = sessionCheck,
+                        emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                        trendCheck = true, adxCheck = true, pullbackCheck = true, candleCheck = true,
+                        spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                         decision = "SELL",
-                        reason = "Bearish trend (EMA Fast < EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bearish candle"
+                        reason = "Bearish trend (EMA Fast < EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bearish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}, BE@${"%.2f".format(adaptive.beTriggerR)}R]"
                     )
                 )
             }
@@ -263,15 +255,24 @@ class TradingStrategy(
         val bullishBreakout = lastClosedCandle.close > highestHigh && prevClosedCandle.close <= highestHigh
         val bearishBreakout = lastClosedCandle.close < lowestLow && prevClosedCandle.close >= lowestLow
 
+        val adaptive = AdaptiveCalculator.computeAll(
+            atr = atr, adx = adx, adxThreshold = strategyConfig.adxThreshold,
+            baseSlMultiplier = strategyConfig.atrSlMultiplier, baseRiskReward = strategyConfig.riskRewardRatio,
+            baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
+            baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
+            minimumStopDistance = symbolConfig.minimumStopDistance, tickSize = symbolConfig.tickSize,
+            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled, adaptiveTpEnabled = strategyConfig.adaptiveTpEnabled,
+            adaptiveBeEnabled = strategyConfig.adaptiveBeEnabled
+        )
+
         if (bullishBreakout && isBullishCandle) {
             val entryPrice = currentQuote.ask
-            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice - slDistance
-            val takeProfit = entryPrice + slDistance * strategyConfig.riskRewardRatio
-            val riskReward = (takeProfit - entryPrice) / slDistance
+            val stopLoss = entryPrice - adaptive.slDistance
+            val takeProfit = entryPrice + adaptive.tpDistance
+            val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.BUY,
                 price = entryPrice,
@@ -283,32 +284,23 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.BUY,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = true,
-                    adxCheck = true,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = true, adxCheck = true, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "BUY",
-                    reason = "Bullish breakout above $highestHigh, ADX >= ${strategyConfig.adxThreshold}, bullish candle confirmation"
+                    reason = "Bullish breakout above $highestHigh, ADX >= ${strategyConfig.adxThreshold}, bullish candle confirmation [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
                 )
             )
         }
 
         if (bearishBreakout && isBearishCandle) {
             val entryPrice = currentQuote.bid
-            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice + slDistance
-            val takeProfit = entryPrice - slDistance * strategyConfig.riskRewardRatio
-            val riskReward = (entryPrice - takeProfit) / slDistance
+            val stopLoss = entryPrice + adaptive.slDistance
+            val takeProfit = entryPrice - adaptive.tpDistance
+            val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.SELL,
                 price = entryPrice,
@@ -320,19 +312,11 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.SELL,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = true,
-                    adxCheck = true,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = true, adxCheck = true, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "SELL",
-                    reason = "Bearish breakout below $lowestLow, ADX >= ${strategyConfig.adxThreshold}, bearish candle confirmation"
+                    reason = "Bearish breakout below $lowestLow, ADX >= ${strategyConfig.adxThreshold}, bearish candle confirmation [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
                 )
             )
         }
@@ -368,16 +352,25 @@ class TradingStrategy(
         val oversoldCondition = rsi < strategyConfig.rsiOversold && lastClosedCandle.close < bbLower
         val overboughtCondition = rsi > strategyConfig.rsiOverbought && lastClosedCandle.close > bbUpper
 
+        val adaptive = AdaptiveCalculator.computeAll(
+            atr = atr, adx = adx, adxThreshold = strategyConfig.adxThreshold,
+            baseSlMultiplier = 1.5, baseRiskReward = 1.0,
+            baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
+            baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
+            minimumStopDistance = symbolConfig.minimumStopDistance, tickSize = symbolConfig.tickSize,
+            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled, adaptiveTpEnabled = false,
+            adaptiveBeEnabled = strategyConfig.adaptiveBeEnabled
+        )
+
         if (oversoldCondition && isBullishCandle) {
             val entryPrice = currentQuote.ask
-            val slDistance = max(atr * 1.5, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice - slDistance
+            val stopLoss = entryPrice - adaptive.slDistance
             val takeProfit = bbMiddle
             val tpDistance = abs(takeProfit - entryPrice)
-            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+            val riskReward = if (adaptive.slDistance > 0) tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.BUY,
                 price = entryPrice,
@@ -389,33 +382,24 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.BUY,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = false,
-                    adxCheck = adx < 25.0,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = false, adxCheck = adx < 25.0, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "BUY",
-                    reason = "RSI($rsi) < ${strategyConfig.rsiOversold}, Close < BB Lower($bbLower), ADX($adx) < 25, bullish reversal candle"
+                    reason = "RSI($rsi) < ${strategyConfig.rsiOversold}, Close < BB Lower($bbLower), ADX($adx) < 25, bullish reversal candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}]"
                 )
             )
         }
 
         if (overboughtCondition && isBearishCandle) {
             val entryPrice = currentQuote.bid
-            val slDistance = max(atr * 1.5, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice + slDistance
+            val stopLoss = entryPrice + adaptive.slDistance
             val takeProfit = bbMiddle
             val tpDistance = abs(entryPrice - takeProfit)
-            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+            val riskReward = if (adaptive.slDistance > 0) tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.SELL,
                 price = entryPrice,
@@ -427,19 +411,11 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.SELL,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = false,
-                    adxCheck = adx < 25.0,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = false, adxCheck = adx < 25.0, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "SELL",
-                    reason = "RSI($rsi) > ${strategyConfig.rsiOverbought}, Close > BB Upper($bbUpper), ADX($adx) < 25, bearish reversal candle"
+                    reason = "RSI($rsi) > ${strategyConfig.rsiOverbought}, Close > BB Upper($bbUpper), ADX($adx) < 25, bearish reversal candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}]"
                 )
             )
         }
@@ -478,15 +454,24 @@ class TradingStrategy(
         val bullishTrend = emaFast > emaSlow && lastClosedCandle.close > emaFast
         val bearishTrend = emaFast < emaSlow && lastClosedCandle.close < emaFast
 
+        val adaptive = AdaptiveCalculator.computeAll(
+            atr = atr, adx = adx, adxThreshold = strategyConfig.adxThreshold,
+            baseSlMultiplier = strategyConfig.atrSlMultiplier, baseRiskReward = strategyConfig.riskRewardRatio,
+            baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
+            baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
+            minimumStopDistance = symbolConfig.minimumStopDistance, tickSize = symbolConfig.tickSize,
+            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled, adaptiveTpEnabled = strategyConfig.adaptiveTpEnabled,
+            adaptiveBeEnabled = strategyConfig.adaptiveBeEnabled
+        )
+
         if (bullishMomentum && bullishTrend && isBullishCandle) {
             val entryPrice = currentQuote.ask
-            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice - slDistance
-            val takeProfit = entryPrice + slDistance * strategyConfig.riskRewardRatio
-            val riskReward = (takeProfit - entryPrice) / slDistance
+            val stopLoss = entryPrice - adaptive.slDistance
+            val takeProfit = entryPrice + adaptive.tpDistance
+            val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.BUY,
                 price = entryPrice,
@@ -498,32 +483,23 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.BUY,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = true,
-                    adxCheck = true,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = true, adxCheck = true, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "BUY",
-                    reason = "MACD histogram positive($macdHistogram) and increasing, ADX($adx) >= ${strategyConfig.momentumAdxThreshold}, bullish trend, bullish candle"
+                    reason = "MACD histogram positive($macdHistogram) and increasing, ADX($adx) >= ${strategyConfig.momentumAdxThreshold}, bullish trend, bullish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
                 )
             )
         }
 
         if (bearishMomentum && bearishTrend && isBearishCandle) {
             val entryPrice = currentQuote.bid
-            val slDistance = max(atr * strategyConfig.atrSlMultiplier, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice + slDistance
-            val takeProfit = entryPrice - slDistance * strategyConfig.riskRewardRatio
-            val riskReward = (entryPrice - takeProfit) / slDistance
+            val stopLoss = entryPrice + adaptive.slDistance
+            val takeProfit = entryPrice - adaptive.tpDistance
+            val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.SELL,
                 price = entryPrice,
@@ -535,19 +511,11 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.SELL,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = true,
-                    adxCheck = true,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = true, adxCheck = true, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "SELL",
-                    reason = "MACD histogram negative($macdHistogram) and decreasing, ADX($adx) >= ${strategyConfig.momentumAdxThreshold}, bearish trend, bearish candle"
+                    reason = "MACD histogram negative($macdHistogram) and decreasing, ADX($adx) >= ${strategyConfig.momentumAdxThreshold}, bearish trend, bearish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
                 )
             )
         }
@@ -590,17 +558,26 @@ class TradingStrategy(
         val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
         val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
 
+        val adaptive = AdaptiveCalculator.computeAll(
+            atr = atr, adx = adx, adxThreshold = strategyConfig.adxThreshold,
+            baseSlMultiplier = 1.0, baseRiskReward = strategyConfig.riskRewardRatio,
+            baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
+            baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
+            minimumStopDistance = symbolConfig.minimumStopDistance, tickSize = symbolConfig.tickSize,
+            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled, adaptiveTpEnabled = false,
+            adaptiveBeEnabled = strategyConfig.adaptiveBeEnabled
+        )
+
         if (nearRangeLow && stochasticK < 30 && isBullishCandle) {
             val entryPrice = currentQuote.ask
-            val slDistance = max(atr * 1.0, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice - slDistance
+            val stopLoss = entryPrice - adaptive.slDistance
             val rangeMidpoint = (rangeHigh + rangeLow) / 2.0
-            val takeProfit = min(rangeMidpoint, entryPrice + slDistance * strategyConfig.riskRewardRatio)
+            val takeProfit = min(rangeMidpoint, entryPrice + adaptive.slDistance * strategyConfig.riskRewardRatio)
             val tpDistance = abs(takeProfit - entryPrice)
-            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+            val riskReward = if (adaptive.slDistance > 0) tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.BUY,
                 price = entryPrice,
@@ -612,34 +589,25 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.BUY,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = false,
-                    adxCheck = adx < strategyConfig.rangeAdxMax,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = false, adxCheck = adx < strategyConfig.rangeAdxMax, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "BUY",
-                    reason = "Range detected ($rangeLow-$$rangeHigh), ADX($adx) < ${strategyConfig.rangeAdxMax}, near range low, stochastic($stochasticK) < 30, bullish candle"
+                    reason = "Range detected ($rangeLow-$$rangeHigh), ADX($adx) < ${strategyConfig.rangeAdxMax}, near range low, stochastic($stochasticK) < 30, bullish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}]"
                 )
             )
         }
 
         if (nearRangeHigh && stochasticK > 70 && isBearishCandle) {
             val entryPrice = currentQuote.bid
-            val slDistance = max(atr * 1.0, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice + slDistance
+            val stopLoss = entryPrice + adaptive.slDistance
             val rangeMidpoint = (rangeHigh + rangeLow) / 2.0
-            val takeProfit = max(rangeMidpoint, entryPrice - slDistance * strategyConfig.riskRewardRatio)
+            val takeProfit = max(rangeMidpoint, entryPrice - adaptive.slDistance * strategyConfig.riskRewardRatio)
             val tpDistance = abs(entryPrice - takeProfit)
-            val riskReward = if (slDistance > 0) tpDistance / slDistance else 0.0
+            val riskReward = if (adaptive.slDistance > 0) tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.SELL,
                 price = entryPrice,
@@ -651,19 +619,11 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.SELL,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = adx,
-                    atr = atr,
-                    trendCheck = false,
-                    adxCheck = adx < strategyConfig.rangeAdxMax,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = adx, atr = atr,
+                    trendCheck = false, adxCheck = adx < strategyConfig.rangeAdxMax, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "SELL",
-                    reason = "Range detected ($rangeLow-$$rangeHigh), ADX($adx) < ${strategyConfig.rangeAdxMax}, near range high, stochastic($stochasticK) > 70, bearish candle"
+                    reason = "Range detected ($rangeLow-$$rangeHigh), ADX($adx) < ${strategyConfig.rangeAdxMax}, near range high, stochastic($stochasticK) > 70, bearish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}]"
                 )
             )
         }

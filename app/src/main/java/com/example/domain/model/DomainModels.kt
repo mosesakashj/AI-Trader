@@ -66,6 +66,53 @@ data class SignalExplanation(
         get() = trendCheck && adxCheck && pullbackCheck && candleCheck && spreadCheck && riskCheck && sessionCheck
 }
 
+data class StrategySignalRecord(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val strategyType: StrategyType,
+    val symbol: String,
+    val direction: TradeDirection,
+    val price: Double,
+    val stopLoss: Double,
+    val takeProfit: Double,
+    val rrRatio: Double,
+    val candleTime: Long,
+    val timestamp: Long = System.currentTimeMillis(),
+    val wasExecuted: Boolean,
+    val blockedReason: String? = null,
+    val explanation: SignalExplanation? = null
+)
+
+data class StrategyAnalysisResult(
+    val strategyType: StrategyType,
+    val totalSignals: Int,
+    val executedTrades: Int,
+    val blockedSignals: Int,
+    val winningTrades: Int,
+    val losingTrades: Int,
+    val winRate: Double,
+    val totalProfitLoss: Double,
+    val profitFactor: Double,
+    val sharpeRatio: Double,
+    val averageR: Double,
+    val expectancy: Double,
+    val maxDrawdownPercent: Double,
+    val maxConsecutiveLosses: Int,
+    val trades: List<Trade>,
+    val allSignals: List<StrategySignalRecord>,
+    val blockedBreakdown: Map<String, Int>,
+    val equityCurve: List<Pair<Long, Double>>
+)
+
+data class MultiStrategyAnalysisResult(
+    val symbol: String,
+    val timeframe: Timeframe,
+    val candleCount: Int,
+    val strategies: Map<StrategyType, StrategyAnalysisResult>,
+    val rankingBySharpe: List<StrategyType>,
+    val rankingByWinRate: List<StrategyType>,
+    val rankingByProfitFactor: List<StrategyType>
+)
+
 data class Trade(
     val id: String,
     val brokerOrderId: String = "",
@@ -147,12 +194,14 @@ data class SymbolConfig(
     val spreadLimit: Double,
     val minimumAtr: Double = 0.0,
     val maximumAtr: Double = 1000.0,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val preferredTimeframe: Timeframe = Timeframe.M15
 )
 
 data class StrategyConfig(
     val strategyVersion: String = "2.0.0",
     val strategyType: StrategyType = StrategyType.PULLBACK,
+    val tradeMode: TradeMode = TradeMode.BALANCED,
     val emaFastPeriod: Int = 20,
     val emaSlowPeriod: Int = 50,
     val adxPeriod: Int = 14,
@@ -200,7 +249,12 @@ data class StrategyConfig(
     val trailingStopEnabled: Boolean = true,
     val trailingStopTriggerR: Double = 1.2,
     val trailingStopDistanceAtr: Double = 1.0,
-    val earlyExitOnTrendReversal: Boolean = true
+    val earlyExitOnTrendReversal: Boolean = true,
+
+    // Adaptive TP/SL/BE
+    val adaptiveTpEnabled: Boolean = true,
+    val adaptiveSlEnabled: Boolean = true,
+    val adaptiveBeEnabled: Boolean = true
 )
 
 data class RiskConfig(

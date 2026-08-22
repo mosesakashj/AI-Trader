@@ -1,27 +1,30 @@
 package com.example.broker
 
 import com.example.domain.model.*
+import com.example.security.SecureStorage
 
 /**
- * DemoBrokerAdapter facilitates demonstration & testing against mock demo endpoints
- * using identical risk rules as the core system.
+ * DemoBrokerAdapter connects to Exness MT5 demo account via the same REST gateway
+ * as LiveBrokerAdapter, but operates in DEMO mode.
  */
 class DemoBrokerAdapter(
-    private val paperDelegate: PaperBrokerAdapter = PaperBrokerAdapter(initialBalance = 10000.0)
+    secureStorage: SecureStorage? = null
 ) : BrokerAdapter {
 
     override val mode: TradingMode = TradingMode.DEMO
 
-    override suspend fun connect(): Boolean = paperDelegate.connect()
-    override suspend fun disconnect() = paperDelegate.disconnect()
-    override suspend fun isConnected(): Boolean = paperDelegate.isConnected()
-    override suspend fun getAccount(): AccountInfo = paperDelegate.getAccount().copy(mode = TradingMode.DEMO)
-    override suspend fun getQuote(symbol: String): Quote = paperDelegate.getQuote(symbol)
-    override suspend fun getPositions(): List<Position> = paperDelegate.getPositions().map { it.copy(mode = TradingMode.DEMO) }
-    override suspend fun validateOrder(order: OrderRequest): OrderValidation = paperDelegate.validateOrder(order)
-    override suspend fun placeOrder(order: OrderRequest): OrderResult = paperDelegate.placeOrder(order)
-    override suspend fun closePosition(positionId: String, reason: CloseReason): OrderResult = paperDelegate.closePosition(positionId, reason)
-    override suspend fun updatePositionSl(positionId: String, newStopLoss: Double, newTakeProfit: Double): Boolean = paperDelegate.updatePositionSl(positionId, newStopLoss, newTakeProfit)
-    override suspend fun reconcile(): BrokerState = paperDelegate.reconcile()
-    override suspend fun onTick(quote: Quote): List<Trade> = paperDelegate.onTick(quote).map { it.copy(mode = TradingMode.DEMO) }
+    private val liveDelegate = LiveBrokerAdapter(secureStorage)
+
+    override suspend fun connect(): Boolean = liveDelegate.connect()
+    override suspend fun disconnect() = liveDelegate.disconnect()
+    override suspend fun isConnected(): Boolean = liveDelegate.isConnected()
+    override suspend fun getAccount(): AccountInfo = liveDelegate.getAccount().copy(mode = TradingMode.DEMO)
+    override suspend fun getQuote(symbol: String): Quote = liveDelegate.getQuote(symbol)
+    override suspend fun getPositions(): List<Position> = liveDelegate.getPositions().map { it.copy(mode = TradingMode.DEMO) }
+    override suspend fun validateOrder(order: OrderRequest): OrderValidation = liveDelegate.validateOrder(order)
+    override suspend fun placeOrder(order: OrderRequest): OrderResult = liveDelegate.placeOrder(order)
+    override suspend fun closePosition(positionId: String, reason: CloseReason): OrderResult = liveDelegate.closePosition(positionId, reason)
+    override suspend fun updatePositionSl(positionId: String, newStopLoss: Double, newTakeProfit: Double): Boolean = liveDelegate.updatePositionSl(positionId, newStopLoss, newTakeProfit)
+    override suspend fun reconcile(): BrokerState = liveDelegate.reconcile()
+    override suspend fun onTick(quote: Quote): List<Trade> = liveDelegate.onTick(quote).map { it.copy(mode = TradingMode.DEMO) }
 }

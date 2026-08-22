@@ -19,19 +19,21 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Logs : Screen("logs", "Logs", Icons.Default.ReceiptLong)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
     object Security : Screen("security", "Docs & Safety", Icons.Default.Security)
+    object TradePlan : Screen("tradeplan", "Trade Plan", Icons.Default.Analytics)
 }
 
 val bottomNavItems = listOf(
     Screen.Dashboard,
     Screen.Markets,
+    Screen.TradePlan,
     Screen.Positions,
-    Screen.Backtest,
     Screen.Settings
 )
 
 val drawerNavItems = listOf(
     Screen.Dashboard,
     Screen.Markets,
+    Screen.TradePlan,
     Screen.Watchlist,
     Screen.Strategy,
     Screen.News,

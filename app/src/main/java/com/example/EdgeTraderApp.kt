@@ -65,7 +65,7 @@ class EdgeTraderApp : Application() {
             brokerFactory = { mode ->
                 when (mode) {
                     TradingMode.PAPER -> PaperBrokerAdapter()
-                    TradingMode.DEMO -> DemoBrokerAdapter()
+                    TradingMode.DEMO -> DemoBrokerAdapter(secureStorage)
                     TradingMode.LIVE -> LiveBrokerAdapter(secureStorage)
                 }
             },

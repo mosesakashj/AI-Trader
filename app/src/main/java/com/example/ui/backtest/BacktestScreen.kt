@@ -52,8 +52,9 @@ fun BacktestScreen() {
     var optimizationResults by remember { mutableStateOf<List<OptimizationResult>?>(null) }
     var walkForwardResult by remember { mutableStateOf<WalkForwardResult?>(null) }
     var monteCarloResult by remember { mutableStateOf<MonteCarloResult?>(null) }
+    var multiStrategyResult by remember { mutableStateOf<MultiStrategyAnalysisResult?>(null) }
 
-    // 0: Single Asset, 1: Portfolio (All Pairs), 2: Parameter Optimizer, 3: Walk-Forward, 4: Monte Carlo
+    // 0: Single Asset, 1: Portfolio (All Pairs), 2: Parameter Optimizer, 3: Walk-Forward, 4: Monte Carlo, 5: Strategy Comparison
     var testMode by remember { mutableStateOf(0) }
 
     val marketDataProvider = remember { EdgeTraderApp.instance.tradingEngine }
@@ -84,7 +85,8 @@ fun BacktestScreen() {
                     1 to "Portfolio Mode",
                     2 to "Optimizer Grid",
                     3 to "Walk-Forward",
-                    4 to "Monte Carlo"
+                    4 to "Monte Carlo",
+                    5 to "Strategy Compare"
                 ).forEach { (mode, title) ->
                     val isSelected = testMode == mode
                     FilterChip(
@@ -119,7 +121,9 @@ fun BacktestScreen() {
                             0 -> "Single Asset Backtest Engine"
                             1 -> "Portfolio Multi-Asset Simulation"
                             2 -> "Quantitative Parameter Optimizer"
-                            else -> "Walk-Forward Validation Matrix"
+                            3 -> "Walk-Forward Validation Matrix"
+                            4 -> "Monte Carlo Risk Analysis"
+                            else -> "Multi-Strategy Comparison Analyzer"
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
@@ -281,6 +285,17 @@ fun BacktestScreen() {
                                                 simulationCount = 500
                                             )
                                         }
+                                        5 -> {
+                                            // Strategy Comparison
+                                            val candles = marketDataProvider.fetchHistoricalCandles(selectedSymbol, selectedTimeframe, count)
+                                            multiStrategyResult = backtestEngine.runMultiStrategyAnalysis(
+                                                candles = candles,
+                                                symbolConfig = symbolConfig,
+                                                riskPercent = risk,
+                                                enableAutoBreakEven = enableAutoBreakEven,
+                                                enableAutoTrailing = enableAutoTrailing
+                                            )
+                                        }
                                     }
                                 }
                                 isRunning = false
@@ -302,6 +317,7 @@ fun BacktestScreen() {
                                     2 -> Icons.Default.Tune
                                     3 -> Icons.Default.Science
                                     4 -> Icons.Default.Calculate
+                                    5 -> Icons.Default.TrendingUp
                                     else -> Icons.Default.PlayArrow
                                 },
                                 contentDescription = null
@@ -313,6 +329,7 @@ fun BacktestScreen() {
                                     2 -> "Run Parameter Grid Optimizer"
                                     3 -> "Execute Walk-Forward Splits"
                                     4 -> "Run Monte Carlo Simulation"
+                                    5 -> "Compare All 6 Strategies"
                                     else -> "Execute Algorithmic Backtest"
                                 },
                                 fontWeight = FontWeight.Bold
@@ -1007,6 +1024,153 @@ fun BacktestScreen() {
                                         Text("Trades: ${scenario.totalTrades} | WR: ${"%.1f".format(scenario.winRate)}%", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Mode 5: Strategy Comparison Results
+        if (testMode == 5 && multiStrategyResult != null) {
+            val msr = multiStrategyResult!!
+
+            // Overall Rankings Summary
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Multi-Strategy Comparison", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = CyanLight)
+                        Text("${msr.symbol} | ${msr.timeframe.label} | ${msr.candleCount} bars", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+                        HorizontalDivider(color = CardBorderDark)
+
+                        Text("Rankings by Sharpe Ratio", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                        msr.rankingBySharpe.forEachIndexed { idx, type ->
+                            val res = msr.strategies[type]!!
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Surface(
+                                        color = if (idx == 0) GoldContainer else if (idx == 1) CyanContainer else SurfaceVariantDark,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text("#${idx + 1}", fontWeight = FontWeight.Bold, color = if (idx == 0) GoldHero else if (idx == 1) CyanLight else TextSecondary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    }
+                                    Text(type.displayName, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                }
+                                Text("Sharpe: ${"%.2f".format(res.sharpeRatio)} | WR: ${"%.1f".format(res.winRate)}% | PF: ${"%.2f".format(res.profitFactor)}", style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = TextSecondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Per-Strategy Detail Cards
+            items(StrategyType.entries.toList()) { type ->
+                val res = msr.strategies[type] ?: return@items
+                val rank = msr.rankingBySharpe.indexOf(type) + 1
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, if (rank == 1) GoldHero else CardBorderDark),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (rank == 1) {
+                                    Surface(color = GoldContainer, shape = RoundedCornerShape(6.dp)) {
+                                        Text("BEST", fontWeight = FontWeight.Bold, color = GoldHero, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    }
+                                }
+                                Text(type.displayName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
+                            Text(
+                                "${if (res.totalProfitLoss >= 0) "+" else ""}$${"%.2f".format(res.totalProfitLoss)}",
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (res.totalProfitLoss >= 0) EmeraldGain else CrimsonLoss
+                            )
+                        }
+
+                        // KPI Grid
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MetricCard("Win Rate", "${"%.1f".format(res.winRate)}%", valueColor = if (res.winRate >= 50.0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
+                            MetricCard("Profit Factor", "%.2f".format(res.profitFactor), valueColor = if (res.profitFactor >= 1.5) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
+                            MetricCard("Sharpe", "%.2f".format(res.sharpeRatio), valueColor = if (res.sharpeRatio >= 1.0) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MetricCard("Avg R", "%.2f".format(res.averageR), valueColor = if (res.averageR > 0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
+                            MetricCard("Max DD", "${"%.1f".format(res.maxDrawdownPercent)}%", valueColor = CrimsonLoss, modifier = Modifier.weight(1f))
+                            MetricCard("Trades", "${res.executedTrades}", modifier = Modifier.weight(1f))
+                        }
+
+                        // Equity Curve
+                        if (res.equityCurve.size >= 2) {
+                            SparklineChart(
+                                points = res.equityCurve,
+                                lineColor = if (res.totalProfitLoss >= 0) EmeraldGain else CrimsonLoss,
+                                modifier = Modifier.fillMaxWidth().height(80.dp)
+                            )
+                        }
+
+                        // Signal Summary
+                        HorizontalDivider(color = CardBorderDark)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Signals: ${res.totalSignals}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            Text("Executed: ${res.executedTrades}", style = MaterialTheme.typography.labelSmall, color = EmeraldGain)
+                            Text("Blocked: ${res.blockedSignals}", style = MaterialTheme.typography.labelSmall, color = if (res.blockedSignals > 0) GoldHero else TextMuted)
+                        }
+
+                        // Blocked Signals Breakdown
+                        if (res.blockedBreakdown.isNotEmpty()) {
+                            Text("Blocked Trade Reasons", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = CrimsonLoss)
+                            res.blockedBreakdown.forEach { (reason, count) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(reason, style = MaterialTheme.typography.bodySmall, color = TextSecondary, modifier = Modifier.weight(1f))
+                                    Text("${count}x", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CrimsonLoss)
+                                }
+                            }
+                        }
+
+                        // Blocked Signals List
+                        val blockedList = res.allSignals.filter { !it.wasExecuted }
+                        if (blockedList.isNotEmpty()) {
+                            HorizontalDivider(color = CardBorderDark)
+                            Text("Blocked Signals Detail", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = CrimsonLoss)
+                            blockedList.take(10).forEach { sig ->
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("${sig.direction.name} @ ${"%.5f".format(sig.price)}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if (sig.direction == TradeDirection.BUY) EmeraldGain else CrimsonLoss)
+                                            Text("R:R ${"%.1f".format(sig.rrRatio)}", style = MaterialTheme.typography.labelSmall, color = CyanLight)
+                                        }
+                                        Text("Reason: ${sig.blockedReason}", style = MaterialTheme.typography.bodySmall, color = CrimsonLoss)
+                                    }
+                                }
+                            }
+                            if (blockedList.size > 10) {
+                                Text("... and ${blockedList.size - 10} more blocked signals", style = MaterialTheme.typography.labelSmall, color = TextMuted)
                             }
                         }
                     }

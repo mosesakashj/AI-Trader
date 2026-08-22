@@ -721,6 +721,332 @@ class BacktestingEngine(
         )
     }
 
+    /**
+     * Runs all 6 strategies on the same candle data, tracking executed trades and risk-blocked signals.
+     */
+    fun runMultiStrategyAnalysis(
+        candles: List<Candle>,
+        symbolConfig: SymbolConfig,
+        initialBalance: Double = 10000.0,
+        riskPercent: Double = 0.25,
+        enableAutoBreakEven: Boolean = true,
+        enableAutoTrailing: Boolean = true
+    ): MultiStrategyAnalysisResult {
+        if (candles.size < 40) {
+            return MultiStrategyAnalysisResult(
+                symbol = symbolConfig.symbol,
+                timeframe = candles.firstOrNull()?.timeframe ?: Timeframe.M15,
+                candleCount = candles.size,
+                strategies = emptyMap(),
+                rankingBySharpe = emptyList(),
+                rankingByWinRate = emptyList(),
+                rankingByProfitFactor = emptyList()
+            )
+        }
+
+        val strategies = StrategyType.entries.associateWith { type ->
+            val config = StrategyConfig(strategyType = type)
+            type to TradingStrategy(config)
+        }
+
+        val results = mutableMapOf<StrategyType, StrategyAnalysisResult>()
+
+        for ((type, activeStrategy) in strategies) {
+            var balance = initialBalance
+            var peakBalance = initialBalance
+            var maxDrawdownPercent = 0.0
+
+            val trades = mutableListOf<Trade>()
+            val allSignals = mutableListOf<StrategySignalRecord>()
+            val equityCurve = mutableListOf<Pair<Long, Double>>()
+            equityCurve.add(candles.first().openTime to balance)
+
+            var openTrade: Trade? = null
+            var lastProcessedCandleTime = 0L
+
+            val tickSize = symbolConfig.tickSize
+            val tickValue = symbolConfig.tickValue
+
+            for (i in 35 until candles.size) {
+                val currentCandle = candles[i]
+                val pastCandles = candles.subList(0, i)
+
+                if (openTrade != null) {
+                    var t = openTrade!!
+                    var isClosed = false
+                    var exitPrice = 0.0
+                    var reason = CloseReason.EXPIRED
+
+                    val ind = IndicatorCalculator.computeLatest(pastCandles)
+                    val atr = ind?.atr ?: (tickSize * 20.0)
+
+                    val markPrice = currentCandle.close
+                    val priceDiff = if (t.direction == TradeDirection.BUY) markPrice - t.entryPrice else t.entryPrice - markPrice
+                    val riskDist = abs(t.entryPrice - t.stopLoss)
+                    val unrealizedR = if (riskDist > 0) priceDiff / riskDist else 0.0
+
+                    if (enableAutoBreakEven && unrealizedR >= activeStrategy.strategyConfig.breakEvenTriggerR) {
+                        val bufferDist = (activeStrategy.strategyConfig.breakEvenBufferPips * tickSize * 10.0).coerceAtLeast(symbolConfig.spreadLimit * 0.2)
+                        if (t.direction == TradeDirection.BUY && t.stopLoss < t.entryPrice) {
+                            t = t.copy(stopLoss = t.entryPrice + bufferDist)
+                        } else if (t.direction == TradeDirection.SELL && t.stopLoss > t.entryPrice) {
+                            t = t.copy(stopLoss = t.entryPrice - bufferDist)
+                        }
+                    }
+
+                    if (enableAutoTrailing && unrealizedR >= activeStrategy.strategyConfig.trailingStopTriggerR) {
+                        val trailDist = (atr * activeStrategy.strategyConfig.trailingStopDistanceAtr).coerceAtLeast(tickSize * 25.0)
+                        if (t.direction == TradeDirection.BUY) {
+                            val candidate = currentCandle.high - trailDist
+                            if (candidate > t.stopLoss) t = t.copy(stopLoss = candidate)
+                        } else {
+                            val candidate = currentCandle.low + trailDist
+                            if (candidate < t.stopLoss) t = t.copy(stopLoss = candidate)
+                        }
+                    }
+                    openTrade = t
+
+                    if (t.direction == TradeDirection.BUY) {
+                        if (currentCandle.low <= t.stopLoss) {
+                            isClosed = true
+                            exitPrice = t.stopLoss
+                            val isBreakEven = t.stopLoss >= (t.entryPrice - 0.0001)
+                            val isTrailing = t.stopLoss > (t.entryPrice + (tickSize * 10.0))
+                            reason = when {
+                                isTrailing -> CloseReason.TRAILING_STOP
+                                isBreakEven -> CloseReason.BREAK_EVEN
+                                else -> CloseReason.STOP_LOSS
+                            }
+                        } else if (currentCandle.high >= t.takeProfit) {
+                            isClosed = true
+                            exitPrice = t.takeProfit
+                            reason = CloseReason.TAKE_PROFIT
+                        }
+                    } else {
+                        if (currentCandle.high >= t.stopLoss) {
+                            isClosed = true
+                            exitPrice = t.stopLoss
+                            val isBreakEven = t.stopLoss <= (t.entryPrice + 0.0001)
+                            val isTrailing = t.stopLoss < (t.entryPrice - (tickSize * 10.0))
+                            reason = when {
+                                isTrailing -> CloseReason.TRAILING_STOP
+                                isBreakEven -> CloseReason.BREAK_EVEN
+                                else -> CloseReason.STOP_LOSS
+                            }
+                        } else if (currentCandle.low <= t.takeProfit) {
+                            isClosed = true
+                            exitPrice = t.takeProfit
+                            reason = CloseReason.TAKE_PROFIT
+                        }
+                    }
+
+                    if (isClosed) {
+                        val finalDiff = if (t.direction == TradeDirection.BUY) exitPrice - t.entryPrice else t.entryPrice - exitPrice
+                        val ticks = finalDiff / tickSize
+                        val profit = ticks * tickValue * t.volume
+                        val profitR = if (riskDist > 0) finalDiff / riskDist else 0.0
+
+                        balance += profit
+                        peakBalance = max(peakBalance, balance)
+                        val ddPct = if (peakBalance > 0) ((peakBalance - balance) / peakBalance) * 100.0 else 0.0
+                        maxDrawdownPercent = max(maxDrawdownPercent, ddPct)
+
+                        trades.add(
+                            t.copy(
+                                closedAt = currentCandle.openTime,
+                                closePrice = exitPrice,
+                                profit = profit,
+                                profitR = profitR,
+                                status = TradeStatus.CLOSED,
+                                closeReason = reason
+                            )
+                        )
+                        openTrade = null
+                        equityCurve.add(currentCandle.openTime to balance)
+                    }
+                }
+
+                if (openTrade == null) {
+                    val mockQuote = Quote(
+                        symbol = symbolConfig.symbol,
+                        bid = currentCandle.close - (symbolConfig.spreadLimit / 2.0),
+                        ask = currentCandle.close + (symbolConfig.spreadLimit / 2.0),
+                        timestamp = currentCandle.openTime
+                    )
+
+                    val signal = activeStrategy.evaluate(
+                        candles = pastCandles,
+                        symbolConfig = symbolConfig,
+                        currentQuote = mockQuote,
+                        riskConfig = RiskConfig(defaultRiskPercent = riskPercent),
+                        hasOpenPosition = false,
+                        lastProcessedCandleTime = lastProcessedCandleTime,
+                        isConnectionHealthy = true,
+                        dailyLossReached = false,
+                        consecutiveLossesReached = false,
+                        marginSufficient = true
+                    )
+
+                    if (signal != null) {
+                        lastProcessedCandleTime = signal.candleTime
+                        allSignals.add(
+                            StrategySignalRecord(
+                                strategyType = type,
+                                symbol = signal.symbol,
+                                direction = signal.direction,
+                                price = signal.price,
+                                stopLoss = signal.stopLoss,
+                                takeProfit = signal.takeProfit,
+                                rrRatio = signal.rrRatio,
+                                candleTime = signal.candleTime,
+                                timestamp = signal.timestamp,
+                                wasExecuted = true,
+                                explanation = signal.explanation
+                            )
+                        )
+
+                        val volume = riskManager.calculatePositionSize(
+                            equity = balance,
+                            riskPercent = riskPercent,
+                            entryPrice = signal.price,
+                            stopLossPrice = signal.stopLoss,
+                            symbolConfig = symbolConfig
+                        )
+
+                        if (volume >= symbolConfig.minLot) {
+                            openTrade = Trade(
+                                id = java.util.UUID.randomUUID().toString(),
+                                symbol = symbolConfig.symbol,
+                                direction = signal.direction,
+                                volume = volume,
+                                entryPrice = signal.price,
+                                stopLoss = signal.stopLoss,
+                                takeProfit = signal.takeProfit,
+                                riskAmount = balance * (riskPercent / 100.0),
+                                riskPercent = riskPercent,
+                                rr = signal.rrRatio,
+                                openedAt = currentCandle.openTime,
+                                status = TradeStatus.OPEN,
+                                strategyVersion = type.name
+                            )
+                        } else {
+                            allSignals.add(
+                                StrategySignalRecord(
+                                    strategyType = type,
+                                    symbol = signal.symbol,
+                                    direction = signal.direction,
+                                    price = signal.price,
+                                    stopLoss = signal.stopLoss,
+                                    takeProfit = signal.takeProfit,
+                                    rrRatio = signal.rrRatio,
+                                    candleTime = signal.candleTime,
+                                    timestamp = signal.timestamp,
+                                    wasExecuted = false,
+                                    blockedReason = "Calculated volume $volume below minLot ${symbolConfig.minLot}",
+                                    explanation = signal.explanation
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            openTrade?.let { t ->
+                val lastCandle = candles.last()
+                val exitPrice = lastCandle.close
+                val priceDiff = if (t.direction == TradeDirection.BUY) exitPrice - t.entryPrice else t.entryPrice - exitPrice
+                val ticks = priceDiff / tickSize
+                val profit = ticks * tickValue * t.volume
+                val riskDist = abs(t.entryPrice - t.stopLoss)
+                val profitR = if (riskDist > 0) priceDiff / riskDist else 0.0
+
+                balance += profit
+                trades.add(
+                    t.copy(
+                        closedAt = lastCandle.openTime,
+                        closePrice = exitPrice,
+                        profit = profit,
+                        profitR = profitR,
+                        status = TradeStatus.CLOSED,
+                        closeReason = CloseReason.EXPIRED
+                    )
+                )
+                equityCurve.add(lastCandle.openTime to balance)
+            }
+
+            val totalTrades = trades.size
+            val winningTrades = trades.count { it.profit > 0 }
+            val losingTrades = trades.count { it.profit <= 0 }
+            val winRate = if (totalTrades > 0) (winningTrades.toDouble() / totalTrades) * 100.0 else 0.0
+
+            val grossProfit = trades.filter { it.profit > 0 }.sumOf { it.profit }
+            val grossLoss = abs(trades.filter { it.profit < 0 }.sumOf { it.profit })
+            val profitFactor = if (grossLoss > 0) grossProfit / grossLoss else if (grossProfit > 0) 9.99 else 0.0
+
+            val totalPnl = balance - initialBalance
+            val avgR = if (totalTrades > 0) trades.sumOf { it.profitR } / totalTrades else 0.0
+            val expectancy = if (totalTrades > 0) totalPnl / totalTrades else 0.0
+
+            val returns = trades.map { it.profit / initialBalance }
+            val avgReturn = if (returns.isNotEmpty()) returns.average() else 0.0
+            val stdDev = if (returns.size > 1) {
+                val variance = returns.map { (it - avgReturn) * (it - avgReturn) }.average()
+                sqrt(variance)
+            } else 0.0
+            val sharpe = if (stdDev > 0) (avgReturn / stdDev) * sqrt(252.0) else 0.0
+
+            var maxConsecLoss = 0
+            var currentConsecLoss = 0
+            trades.forEach { t ->
+                if (t.profit <= 0) {
+                    currentConsecLoss++
+                    maxConsecLoss = max(maxConsecLoss, currentConsecLoss)
+                } else {
+                    currentConsecLoss = 0
+                }
+            }
+
+            val blockedSignals = allSignals.filter { !it.wasExecuted }
+            val blockedBreakdown = blockedSignals.groupBy { it.blockedReason ?: "Unknown" }
+                .mapValues { it.value.size }
+
+            results[type] = StrategyAnalysisResult(
+                strategyType = type,
+                totalSignals = allSignals.size,
+                executedTrades = totalTrades,
+                blockedSignals = blockedSignals.size,
+                winningTrades = winningTrades,
+                losingTrades = losingTrades,
+                winRate = winRate,
+                totalProfitLoss = totalPnl,
+                profitFactor = profitFactor,
+                sharpeRatio = sharpe,
+                averageR = avgR,
+                expectancy = expectancy,
+                maxDrawdownPercent = maxDrawdownPercent,
+                maxConsecutiveLosses = maxConsecLoss,
+                trades = trades,
+                allSignals = allSignals,
+                blockedBreakdown = blockedBreakdown,
+                equityCurve = equityCurve
+            )
+        }
+
+        val rankingBySharpe = results.entries.sortedByDescending { it.value.sharpeRatio }.map { it.key }
+        val rankingByWinRate = results.entries.sortedByDescending { it.value.winRate }.map { it.key }
+        val rankingByProfitFactor = results.entries.sortedByDescending { it.value.profitFactor }.map { it.key }
+
+        return MultiStrategyAnalysisResult(
+            symbol = symbolConfig.symbol,
+            timeframe = candles.first().timeframe,
+            candleCount = candles.size,
+            strategies = results,
+            rankingBySharpe = rankingBySharpe,
+            rankingByWinRate = rankingByWinRate,
+            rankingByProfitFactor = rankingByProfitFactor
+        )
+    }
+
     private fun calculateMetrics(
         symbol: String,
         timeframe: Timeframe,

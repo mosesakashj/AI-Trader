@@ -5,6 +5,7 @@ import com.example.domain.model.*
 data class BotConfigEntity(
     val id: String = "primary_config",
     val mode: String = TradingMode.PAPER.name,
+    val tradeMode: String = "BALANCED",
     val isBotEnabled: Boolean = false,
     val emergencyStop: Boolean = false,
     val safeMode: Boolean = false,
@@ -62,6 +63,28 @@ data class BotConfigEntity(
     val trailingStopTriggerR: Double = 1.2,
     val trailingStopDistanceAtr: Double = 1.0,
     val earlyExitOnTrendReversal: Boolean = true,
+
+    // Adaptive TP/SL/BE
+    val adaptiveTpEnabled: Boolean = true,
+    val adaptiveSlEnabled: Boolean = true,
+    val adaptiveBeEnabled: Boolean = true,
+    
+    // Per-symbol timeframes (null = use strategy default M15)
+    val xauusdTimeframe: String = "",
+    val btcusdTimeframe: String = "",
+    val ethusdTimeframe: String = "",
+    val solusdTimeframe: String = "",
+    val usoilTimeframe: String = "",
+    val eurusdTimeframe: String = "",
+    val gbpusdTimeframe: String = "",
+    val usdjpyTimeframe: String = "",
+    val audusdTimeframe: String = "",
+    val usdcadTimeframe: String = "",
+    val usdchfTimeframe: String = "",
+    val nzdusdTimeframe: String = "",
+    val eurgbpTimeframe: String = "",
+    val eurjpyTimeframe: String = "",
+    val gbpjpyTimeframe: String = "",
     
     val xauusdEnabled: Boolean = true,
     val btcusdEnabled: Boolean = true,

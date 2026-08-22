@@ -27,6 +27,7 @@ fun StrategyScreen() {
     val engine = EdgeTraderApp.instance.tradingEngine
     val config by repository.configFlow.collectAsState(initial = null)
     val latestSignal by engine.latestSignal.collectAsState()
+    val shadowSignals by engine.shadowSignals.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     var strategyType by remember(config) {
@@ -197,6 +198,88 @@ fun StrategyScreen() {
                         }
                     } else {
                         Text("No active signal yet. Engine evaluates closed M15 candles.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    }
+                }
+            }
+        }
+
+        // Live Shadow Strategy Comparison
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Shadow Strategy Monitor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = CyanLight)
+                    Text("Other strategies evaluated on live data. Signals blocked by risk limits shown in red.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+                    val activeType = try {
+                        StrategyType.valueOf(config?.strategyType ?: StrategyType.PULLBACK.name)
+                    } catch (_: Exception) { StrategyType.PULLBACK }
+
+                    StrategyType.entries.forEach { type ->
+                        val isShadow = type != activeType
+                        val signals = shadowSignals[type] ?: emptyList()
+                        val executed = signals.count { it.wasExecuted }
+                        val blocked = signals.count { !it.wasExecuted }
+                        val lastSignal = signals.lastOrNull()
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isShadow) SurfaceVariantDark else PrimaryBlueContainer
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (!isShadow) CyanLight else CardBorderDark),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        if (!isShadow) {
+                                            Surface(color = CyanContainer, shape = RoundedCornerShape(4.dp)) {
+                                                Text("ACTIVE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CyanLight, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            }
+                                        }
+                                        Text(type.displayName, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    }
+                                    Text("${signals.size} signals", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                }
+
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Surface(color = EmeraldContainer, shape = RoundedCornerShape(6.dp)) {
+                                        Text("Exec: $executed", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = EmeraldGain, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    }
+                                    if (blocked > 0) {
+                                        Surface(color = CrimsonContainer, shape = RoundedCornerShape(6.dp)) {
+                                            Text("Blocked: $blocked", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CrimsonLoss, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                }
+
+                                if (lastSignal != null) {
+                                    HorizontalDivider(color = CardBorderDark)
+                                    Text("Last: ${lastSignal.direction.name} @ ${"%.5f".format(lastSignal.price)}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                    if (lastSignal.blockedReason != null) {
+                                        Text("Blocked: ${lastSignal.blockedReason}", style = MaterialTheme.typography.bodySmall, color = CrimsonLoss)
+                                    }
+                                }
+
+                                val blockedSignals = signals.filter { !it.wasExecuted }
+                                if (blockedSignals.isNotEmpty()) {
+                                    HorizontalDivider(color = CardBorderDark)
+                                    Text("Blocked Trade Reasons:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = CrimsonLoss)
+                                    blockedSignals.groupBy { it.blockedReason ?: "Unknown" }.forEach { (reason, group) ->
+                                        Text("  ${reason} (${group.size}x)", style = MaterialTheme.typography.bodySmall, color = CrimsonLoss)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

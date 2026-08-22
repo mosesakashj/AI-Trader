@@ -78,3 +78,9 @@ enum class AssetType {
     FOREX,
     INDEX
 }
+
+enum class TradeMode(val displayName: String, val description: String) {
+    CONSERVATIVE("Conservative", "Lower risk, wider stops, earlier break-even, more selective entries"),
+    BALANCED("Balanced", "Default risk/reward profile with moderate parameters"),
+    AGGRESSIVE("Aggressive", "Higher risk, tighter stops, later break-even, more trades")
+}

@@ -42,6 +42,8 @@ import com.example.ui.security.SecurityDocumentationScreen
 import com.example.ui.settings.SettingsScreen
 import com.example.ui.strategy.StrategyScreen
 import com.example.ui.watchlist.WatchlistScreen
+import com.example.ui.tradeplan.TradePlanScannerScreen
+import com.example.ui.tradeplan.TradePlanScannerViewModel
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -240,6 +242,10 @@ private fun MainAppContent(dashboardViewModel: DashboardViewModel) {
                     }
                     composable(Screen.Markets.route) {
                         MarketsScreen()
+                    }
+                    composable(Screen.TradePlan.route) {
+                        val tradePlanViewModel: TradePlanScannerViewModel by viewModels()
+                        TradePlanScannerScreen(viewModel = tradePlanViewModel)
                     }
                     composable(Screen.Watchlist.route) {
                         WatchlistScreen()

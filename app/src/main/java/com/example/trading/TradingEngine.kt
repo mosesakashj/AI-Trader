@@ -82,6 +82,12 @@ class TradingEngine(
     private var strategy = TradingStrategy()
     private var riskManager = RiskManager()
 
+    private val shadowStrategies = ConcurrentHashMap<StrategyType, TradingStrategy>()
+    private val _shadowSignals = MutableStateFlow<Map<StrategyType, List<StrategySignalRecord>>>(emptyMap())
+    val shadowSignals: StateFlow<Map<StrategyType, List<StrategySignalRecord>>> = _shadowSignals.asStateFlow()
+    private val shadowSignalsAccumulator = ConcurrentHashMap<StrategyType, MutableList<StrategySignalRecord>>()
+    private val lastShadowProcessedTimes = ConcurrentHashMap<String, ConcurrentHashMap<StrategyType, Long>>()
+
     suspend fun initialize() {
         val config = repository.getOrCreateConfig()
         val mode = runCatching { TradingMode.valueOf(config.mode) }.getOrDefault(TradingMode.PAPER)
@@ -593,6 +599,9 @@ class TradingEngine(
 
             stateMachine.transitionTo(StateMachineState.SIGNAL_FOUND, "Signal: ${signal.symbol} ${signal.direction}")
 
+            // Evaluate shadow strategies on same candle data
+            evaluateShadowStrategies(symbol, candles, quote, lastProcessedTime, hasOpenPos, openPositions.size)
+
             // Validate order
             stateMachine.transitionTo(StateMachineState.VALIDATING, "Validating risk & margin")
             val validation = riskManager.validateTrade(
@@ -697,7 +706,84 @@ class TradingEngine(
                 )
                 stateMachine.transitionTo(StateMachineState.READY, "Execution failed: ${orderResult.errorMessage}")
             }
+        } else {
+            // No signal from active strategy, still evaluate shadows
+            evaluateShadowStrategies(symbol, candles, quote, lastProcessedTime, hasOpenPos, openPositions.size)
         }
+    }
+
+    private fun evaluateShadowStrategies(
+        symbol: String,
+        candles: List<Candle>,
+        quote: Quote,
+        lastProcessedTime: Long,
+        hasOpenPosition: Boolean,
+        openPositionsCount: Int
+    ) {
+        val config = repository.getOrCreateConfig()
+        val riskConfig = RiskConfig(
+            defaultRiskPercent = config.defaultRiskPercent,
+            maxDailyLossPercent = config.maxDailyLossPercent,
+            maxConsecutiveLosses = config.maxConsecutiveLosses,
+            maxOpenPositions = config.maxOpenPositions,
+            emergencyStopActive = config.emergencyStop,
+            safeModeActive = config.safeMode,
+            safeModeReason = config.safeModeReason
+        )
+        val todayLossPercent = if (_dailyProfitLoss.value < 0) abs(_dailyProfitLoss.value / 10000.0) * 100.0 else 0.0
+
+        val symbolLastProcessed = lastShadowProcessedTimes.getOrPut(symbol) { ConcurrentHashMap() }
+
+        for ((type, shadowStrategy) in shadowStrategies) {
+            if (type == strategy.strategyConfig.strategyType) continue
+
+            val lastProcessed = symbolLastProcessed[type] ?: 0L
+
+            val shadowSignal = shadowStrategy.evaluate(
+                candles = candles,
+                symbolConfig = symbolConfigs[symbol] ?: continue,
+                currentQuote = quote,
+                riskConfig = riskConfig,
+                hasOpenPosition = hasOpenPosition,
+                lastProcessedCandleTime = lastProcessed,
+                isConnectionHealthy = _connectionState.value == ConnectionState.ONLINE,
+                dailyLossReached = todayLossPercent >= config.maxDailyLossPercent,
+                consecutiveLossesReached = _consecutiveLosses.value >= config.maxConsecutiveLosses,
+                marginSufficient = _currentAccount.value.freeMargin > 200.0
+            )
+
+            if (shadowSignal != null) {
+                symbolLastProcessed[type] = shadowSignal.candleTime
+
+                val validation = riskManager.validateTrade(
+                    signal = shadowSignal,
+                    account = _currentAccount.value,
+                    symbolConfig = symbolConfigs[symbol] ?: continue,
+                    todayLossPercent = todayLossPercent,
+                    consecutiveLosses = _consecutiveLosses.value,
+                    openPositionsCount = openPositionsCount
+                )
+
+                val record = StrategySignalRecord(
+                    strategyType = type,
+                    symbol = shadowSignal.symbol,
+                    direction = shadowSignal.direction,
+                    price = shadowSignal.price,
+                    stopLoss = shadowSignal.stopLoss,
+                    takeProfit = shadowSignal.takeProfit,
+                    rrRatio = shadowSignal.rrRatio,
+                    candleTime = shadowSignal.candleTime,
+                    wasExecuted = validation.isValid,
+                    blockedReason = if (!validation.isValid) validation.reason else null,
+                    explanation = shadowSignal.explanation
+                )
+
+                shadowSignalsAccumulator.getOrPut(type) { mutableListOf() }.add(record)
+            }
+        }
+
+        val snapshot = shadowSignalsAccumulator.mapValues { it.value.toList() }
+        _shadowSignals.value = snapshot
     }
 
     private fun updateRollingCandle(quote: Quote) {
@@ -732,6 +818,119 @@ class TradingEngine(
             val close = (quote.ask + quote.bid) / 2.0
             list[list.size - 1] = last.copy(high = high, low = low, close = close, volume = last.volume + 1.0)
         }
+    }
+
+    fun analyzeSymbolForTradePlan(
+        symbol: String,
+        strategyType: StrategyType,
+        strategyConfig: StrategyConfig
+    ): TradePlan? {
+        val symbolConfig = symbolConfigs[symbol] ?: return null
+        if (!symbolConfig.enabled) return null
+
+        val sessionInfo = MarketScheduleUtils.getMarketSession(symbol)
+        val quote = _activeQuotes.value[symbol] ?: return null
+
+        val candles = candlesMap[symbol]?.toList() ?: return null
+        val closedCandles = candles.filter { it.isClosed }
+        if (closedCandles.size < 30) return null
+
+        val config = runCatching {
+            kotlinx.coroutines.runBlocking { repository.getOrCreateConfig() }
+        }.getOrNull() ?: BotConfigEntity()
+
+        val riskConfig = RiskConfig(
+            defaultRiskPercent = config.defaultRiskPercent,
+            maxDailyLossPercent = config.maxDailyLossPercent,
+            maxConsecutiveLosses = config.maxConsecutiveLosses,
+            maxOpenPositions = config.maxOpenPositions,
+            emergencyStopActive = config.emergencyStop,
+            safeModeActive = config.safeMode,
+            safeModeReason = config.safeModeReason
+        )
+
+        val tempStrategy = TradingStrategy(
+            strategyConfig = strategyConfig,
+            newsFilter = NoNewsFilter()
+        )
+
+        val signal = tempStrategy.evaluate(
+            candles = candles,
+            symbolConfig = symbolConfig,
+            currentQuote = quote,
+            riskConfig = riskConfig,
+            hasOpenPosition = false,
+            lastProcessedCandleTime = 0L,
+            isConnectionHealthy = _connectionState.value == ConnectionState.ONLINE,
+            dailyLossReached = false,
+            consecutiveLossesReached = false,
+            marginSufficient = _currentAccount.value.freeMargin > 200.0
+        ) ?: return null
+
+        val indicators = IndicatorCalculator.computeLatest(
+            candles = closedCandles,
+            fastEmaPeriod = strategyConfig.emaFastPeriod,
+            slowEmaPeriod = strategyConfig.emaSlowPeriod,
+            adxPeriod = strategyConfig.adxPeriod,
+            atrPeriod = strategyConfig.atrPeriod,
+            rsiPeriod = strategyConfig.rsiPeriod,
+            macdFast = strategyConfig.macdFastPeriod,
+            macdSlow = strategyConfig.macdSlowPeriod,
+            macdSignal = strategyConfig.macdSignalPeriod,
+            bbPeriod = strategyConfig.bbPeriod,
+            bbStdDev = strategyConfig.bbStdDev,
+            stochK = 14,
+            stochD = 3
+        ) ?: return null
+
+        val volume = riskManager.calculatePositionSize(
+            equity = _currentAccount.value.equity,
+            riskPercent = config.defaultRiskPercent,
+            entryPrice = signal.price,
+            stopLossPrice = signal.stopLoss,
+            symbolConfig = symbolConfig
+        )
+
+        val priceRisk = kotlin.math.abs(signal.price - signal.stopLoss)
+        val ticksAtRisk = priceRisk / symbolConfig.tickSize
+        val theoreticalRisk = ticksAtRisk * symbolConfig.tickValue * volume
+
+        val validation = riskManager.validateTrade(
+            signal = signal,
+            account = _currentAccount.value,
+            symbolConfig = symbolConfig,
+            todayLossPercent = 0.0,
+            consecutiveLosses = 0,
+            openPositionsCount = repository.getOpenPositions().size
+        )
+
+        return TradePlan(
+            signal = signal,
+            strategyType = strategyType,
+            symbolConfig = symbolConfig,
+            currentQuote = quote,
+            indicators = indicators,
+            validation = validation,
+            positionSize = volume,
+            riskAmount = theoreticalRisk,
+            marketSession = sessionInfo
+        )
+    }
+
+    suspend fun executeManualTrade(plan: TradePlan): OrderResult {
+        val config = repository.getOrCreateConfig()
+        val orderRequest = OrderRequest(
+            clientOrderId = UUID.randomUUID().toString(),
+            symbol = plan.signal.symbol,
+            direction = plan.signal.direction,
+            volume = plan.positionSize,
+            requestedPrice = plan.signal.price,
+            stopLoss = plan.signal.stopLoss,
+            takeProfit = plan.signal.takeProfit,
+            maxSlippage = 1.0,
+            mode = activeBroker.mode
+        )
+        return activeBroker.placeOrder(orderRequest)
     }
 
     suspend fun triggerEmergencyStop(reason: String = "User Emergency Stop triggered") {
@@ -872,5 +1071,11 @@ class TradingEngine(
                 safeModeReason = config.safeModeReason
             )
         )
+
+        StrategyType.entries.forEach { type ->
+            val cfg = StrategyConfig(strategyType = type)
+            shadowStrategies[type] = TradingStrategy(cfg)
+            shadowSignalsAccumulator[type] = mutableListOf()
+        }
     }
 }
