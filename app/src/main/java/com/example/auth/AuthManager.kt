@@ -27,6 +27,10 @@ class AuthManager(private val context: Context) {
     private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
+    private var hasSeenLoginScreen = false
+
+    fun shouldShowLogin(): Boolean = !hasSeenLoginScreen
+
     private val webClientId: String by lazy {
         context.getString(
             context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
@@ -76,6 +80,7 @@ class AuthManager(private val context: Context) {
                     email = user.email ?: "",
                     photoUrl = user.photoUrl?.toString()
                 )
+                hasSeenLoginScreen = true
                 _authState.value = signedIn
                 Result.success(signedIn)
             } else {
@@ -101,7 +106,12 @@ class AuthManager(private val context: Context) {
     }
 
     fun skipSignIn() {
+        hasSeenLoginScreen = true
         _authState.value = AuthState.SignedOut
+    }
+
+    fun markLoginSeen() {
+        hasSeenLoginScreen = true
     }
 
     fun getCurrentUserId(): String? = auth.currentUser?.uid

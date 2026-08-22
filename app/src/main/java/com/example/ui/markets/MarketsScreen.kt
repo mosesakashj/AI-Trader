@@ -399,23 +399,7 @@ fun MarketsScreen() {
         // 6. Expected Movement Card
         if (expectedMove != null) {
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, CardBorderDark),
-                    modifier = Modifier.fillMaxWidth().testTag("expected_move_card")
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Expected Movement",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        ExpectedMovementCard(expectedMove = expectedMove!!)
-                    }
-                }
+                ExpectedMovementCard(expectedMove = expectedMove!!)
             }
         }
 

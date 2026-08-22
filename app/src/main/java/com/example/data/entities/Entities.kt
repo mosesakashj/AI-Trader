@@ -69,6 +69,9 @@ data class BotConfigEntity(
     val eurgbpEnabled: Boolean = false,
     val eurjpyEnabled: Boolean = false,
     val gbpjpyEnabled: Boolean = false,
+    val ethusdEnabled: Boolean = false,
+    val solusdEnabled: Boolean = false,
+    val usoilEnabled: Boolean = false,
     val telegramEnabled: Boolean = false,
     val telegramChatId: String = "",
     val strategyVersion: String = "2.0.0",
@@ -168,6 +171,18 @@ data class HeartbeatEntity(
     val timestamp: Long,
     val status: String,
     val details: String = ""
+)
+
+@Entity(tableName = "watchlist")
+data class WatchlistItemEntity(
+    @PrimaryKey val symbol: String,
+    val displayName: String,
+    val assetType: String,
+    val addedAt: Long = System.currentTimeMillis(),
+    val isMonitoring: Boolean = true,
+    val alertOnSignal: Boolean = true,
+    val alertOnSessionOpen: Boolean = false,
+    val notes: String = ""
 )
 
 

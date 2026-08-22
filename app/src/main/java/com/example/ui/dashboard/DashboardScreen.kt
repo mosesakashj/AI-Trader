@@ -22,7 +22,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.EdgeTraderApp
 import com.example.broker.MarketScheduleUtils
 import com.example.data.api.MarketInsightsRepository
 import com.example.domain.model.*
@@ -52,8 +51,7 @@ fun DashboardScreen(
     val sentiment by insightsRepo.sentiment.collectAsState()
     LaunchedEffect(Unit) { insightsRepo.refreshAll() }
 
-    val repository = EdgeTraderApp.instance.repository
-    val allTrades by repository.allTradesFlow.collectAsState(initial = emptyList())
+    val allTrades by viewModel.recentTrades.collectAsStateWithLifecycle()
     val perfStats = remember(allTrades) { computePerformanceStats(allTrades) }
 
     var showEmergencyDialog by remember { mutableStateOf(false) }
@@ -287,8 +285,6 @@ fun DashboardScreen(
         items(filteredSymbols) { symConfig ->
             val quote = quotes[symConfig.symbol]
             val session = MarketScheduleUtils.getMarketSession(symConfig.symbol)
-            val isEnabled = viewModel.engine.isSymbolEnabled(symConfig.symbol)
-
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                 shape = RoundedCornerShape(16.dp),

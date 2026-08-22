@@ -114,3 +114,24 @@ interface HeartbeatDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun updateHeartbeat(heartbeat: HeartbeatEntity)
 }
+
+@Dao
+interface WatchlistDao {
+    @Query("SELECT * FROM watchlist ORDER BY addedAt DESC")
+    fun getWatchlistFlow(): Flow<List<WatchlistItemEntity>>
+
+    @Query("SELECT * FROM watchlist ORDER BY addedAt DESC")
+    suspend fun getWatchlist(): List<WatchlistItemEntity>
+
+    @Query("SELECT * FROM watchlist WHERE symbol = :symbol LIMIT 1")
+    suspend fun getItem(symbol: String): WatchlistItemEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: WatchlistItemEntity)
+
+    @Query("DELETE FROM watchlist WHERE symbol = :symbol")
+    suspend fun delete(symbol: String)
+
+    @Query("SELECT COUNT(*) FROM watchlist")
+    suspend fun count(): Int
+}

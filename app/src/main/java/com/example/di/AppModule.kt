@@ -6,8 +6,7 @@ import com.example.broker.DemoBrokerAdapter
 import com.example.broker.LiveBrokerAdapter
 import com.example.broker.PaperBrokerAdapter
 import com.example.broker.RealTimeMarketDataProvider
-import com.example.data.database.EdgeTraderDatabase
-import com.example.data.repositories.TradingRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.TradingMode
 import com.example.notifications.AndroidNotifier
 import com.example.notifications.AppNotificationManager
@@ -33,19 +32,13 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideTradingRepository(database: EdgeTraderDatabase): TradingRepository {
-        return TradingRepository(database)
-    }
-
-    @Provides
-    @Singleton
     fun provideAndroidNotifier(@ApplicationContext context: Context): AndroidNotifier {
         return AndroidNotifier(context)
     }
 
     @Provides
     @Singleton
-    fun provideTelegramNotifier(secureStorage: SecureStorage, repository: TradingRepository): TelegramNotifier {
+    fun provideTelegramNotifier(secureStorage: SecureStorage, repository: FirestoreRepository): TelegramNotifier {
         return TelegramNotifier(secureStorage, repository)
     }
 
@@ -64,7 +57,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideTradingEngine(
-        repository: TradingRepository,
+        repository: FirestoreRepository,
         notificationManager: AppNotificationManager,
         secureStorage: SecureStorage,
         marketDataProvider: RealTimeMarketDataProvider

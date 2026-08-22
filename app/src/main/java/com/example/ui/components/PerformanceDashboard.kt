@@ -43,16 +43,16 @@ fun computePerformanceStats(trades: List<Trade>): PerformanceStats {
     val closed = trades.filter { it.status == TradeStatus.CLOSED }
     if (closed.isEmpty()) return PerformanceStats()
 
-    val wins = closed.filter { (it.realizedPnl ?: 0.0) > 0 }
-    val losses = closed.filter { (it.realizedPnl ?: 0.0) <= 0 }
+    val wins = closed.filter { (it.profit) > 0 }
+    val losses = closed.filter { (it.profit) <= 0 }
 
     val totalTrades = closed.size
     val winCount = wins.size
     val lossCount = losses.size
     val winRate = if (totalTrades > 0) winCount.toDouble() / totalTrades else 0.0
 
-    val totalWins = wins.sumOf { it.realizedPnl ?: 0.0 }
-    val totalLosses = kotlin.math.abs(losses.sumOf { it.realizedPnl ?: 0.0 })
+    val totalWins = wins.sumOf { it.profit }
+    val totalLosses = kotlin.math.abs(losses.sumOf { it.profit })
     val profitFactor = if (totalLosses > 0) totalWins / totalLosses else if (totalWins > 0) Double.MAX_VALUE else 0.0
 
     val avgWinR = if (winCount > 0) totalWins / winCount else 0.0
@@ -62,15 +62,15 @@ fun computePerformanceStats(trades: List<Trade>): PerformanceStats {
         (winRate * avgWinR) - ((1 - winRate) * avgLossR)
     } else 0.0
 
-    val sorted = closed.sortedBy { it.closedAt ?: it.openedAt ?: 0L }
+val sorted = closed.sortedBy { it.closedAt }
     val equityCurve = mutableListOf<Pair<Long, Double>>()
     var running = 0.0
     var peak = 0.0
     var maxDrawdown = 0.0
 
     for (trade in sorted) {
-        running += trade.realizedPnl ?: 0.0
-        val timestamp = trade.closedAt ?: trade.openedAt ?: 0L
+        running += trade.profit
+        val timestamp = trade.closedAt
         equityCurve.add(timestamp to running)
         if (running > peak) peak = running
         val drawdown = peak - running
@@ -96,7 +96,7 @@ fun computePerformanceStats(trades: List<Trade>): PerformanceStats {
         }
     }
 
-    val lastPnl = sorted.lastOrNull()?.realizedPnl ?: 0.0
+    val lastPnl = sorted.lastOrNull()?.profit ?: 0.0
     currentStreak = if (lastPnl > 0) currentWinCount else -currentLossCount
 
     return PerformanceStats(

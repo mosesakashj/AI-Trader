@@ -40,4 +40,7 @@ object DatabaseModule {
 
     @Provides
     fun provideHeartbeatDao(db: EdgeTraderDatabase): HeartbeatDao = db.heartbeatDao()
+
+    @Provides
+    fun provideWatchlistDao(db: EdgeTraderDatabase): WatchlistDao = db.watchlistDao()
 }

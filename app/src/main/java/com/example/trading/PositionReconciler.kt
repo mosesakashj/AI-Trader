@@ -1,7 +1,7 @@
 package com.example.trading
 
 import com.example.broker.BrokerAdapter
-import com.example.data.repositories.TradingRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.Position
 import com.example.domain.model.TradeDirection
@@ -28,7 +28,7 @@ sealed class ReconciliationResult {
 }
 
 class PositionReconciler(
-    private val repository: TradingRepository,
+    private val repository: FirestoreRepository,
     private val brokerAdapter: BrokerAdapter
 ) {
 

@@ -70,6 +70,9 @@ fun SettingsScreen(
         listOf(
             "XAUUSD" to "Gold (Spot)",
             "BTCUSD" to "Bitcoin (Spot)",
+            "ETHUSD" to "Ethereum (Spot)",
+            "SOLUSD" to "Solana (Spot)",
+            "USOIL" to "Crude Oil (WTI)",
             "EURUSD" to "EUR/USD",
             "GBPUSD" to "GBP/USD",
             "USDJPY" to "USD/JPY",
@@ -87,6 +90,9 @@ fun SettingsScreen(
             listOf(
                 if (it.xauusdEnabled) "XAUUSD" else null,
                 if (it.btcusdEnabled) "BTCUSD" else null,
+                if (it.ethusdEnabled) "ETHUSD" else null,
+                if (it.solusdEnabled) "SOLUSD" else null,
+                if (it.usoilEnabled) "USOIL" else null,
                 if (it.eurusdEnabled) "EURUSD" else null,
                 if (it.gbpusdEnabled) "GBPUSD" else null,
                 if (it.usdjpyEnabled) "USDJPY" else null,
@@ -633,6 +639,9 @@ fun SettingsScreen(
                                     val newConfig = curr.copy(
                                         xauusdEnabled = monitoredPairs.contains("XAUUSD"),
                                         btcusdEnabled = monitoredPairs.contains("BTCUSD"),
+                                        ethusdEnabled = monitoredPairs.contains("ETHUSD"),
+                                        solusdEnabled = monitoredPairs.contains("SOLUSD"),
+                                        usoilEnabled = monitoredPairs.contains("USOIL"),
                                         eurusdEnabled = monitoredPairs.contains("EURUSD"),
                                         gbpusdEnabled = monitoredPairs.contains("GBPUSD"),
                                         usdjpyEnabled = monitoredPairs.contains("USDJPY"),

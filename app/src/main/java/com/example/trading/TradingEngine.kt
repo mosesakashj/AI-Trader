@@ -2,7 +2,7 @@ package com.example.trading
 
 import com.example.broker.*
 import com.example.data.entities.BotConfigEntity
-import com.example.data.repositories.TradingRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.*
 import com.example.domain.model.toClosedTrade
 import com.example.domain.risk.RiskManager
@@ -22,7 +22,7 @@ import kotlin.math.max
 import kotlin.math.minOf
 
 class TradingEngine(
-    private val repository: TradingRepository,
+    private val repository: FirestoreRepository,
     private val notificationManager: AppNotificationManager,
     private val brokerFactory: (TradingMode) -> BrokerAdapter,
     val marketDataProvider: MarketDataProvider = PaperMarketDataProvider()
@@ -102,6 +102,9 @@ class TradingEngine(
         if (config.eurgbpEnabled) enabledSymbols.add("EURGBP")
         if (config.eurjpyEnabled) enabledSymbols.add("EURJPY")
         if (config.gbpjpyEnabled) enabledSymbols.add("GBPJPY")
+        if (config.ethusdEnabled) enabledSymbols.add("ETHUSD")
+        if (config.solusdEnabled) enabledSymbols.add("SOLUSD")
+        if (config.usoilEnabled) enabledSymbols.add("USOIL")
 
         // Seed historical candles for enabled symbols only
         enabledSymbols.forEach { symbol ->

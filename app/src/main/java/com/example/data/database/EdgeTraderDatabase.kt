@@ -15,7 +15,8 @@ import com.example.data.entities.*
         SignalEntity::class,
         CandleEntity::class,
         SystemEventEntity::class,
-        HeartbeatEntity::class
+        HeartbeatEntity::class,
+        WatchlistItemEntity::class
     ],
     version = 1,
     exportSchema = false
@@ -28,6 +29,7 @@ abstract class EdgeTraderDatabase : RoomDatabase() {
     abstract fun candleDao(): CandleDao
     abstract fun systemEventDao(): SystemEventDao
     abstract fun heartbeatDao(): HeartbeatDao
+    abstract fun watchlistDao(): WatchlistDao
 
     companion object {
         @Volatile

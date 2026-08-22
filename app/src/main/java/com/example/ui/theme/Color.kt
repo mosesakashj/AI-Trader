@@ -16,6 +16,7 @@ val PrimaryBlueContainerActive = Color(0xFFC2D7FF)
 val OnPrimaryBlueContainer = Color(0xFF001B3E)  // Deep Navy for hero text
 val CyanLight = Color(0xFF0061A4)              // Mapped primary blue
 val CyanAccent = Color(0xFF0284C7)
+val CyanContainer = Color(0xFFD6E3FF)        // Light blue container (same as PrimaryBlueContainer)
 
 // Financial Gains & Losses (Clean Light Theme Friendly)
 val EmeraldGain = Color(0xFF00875A)             // Crisp Forest Green
