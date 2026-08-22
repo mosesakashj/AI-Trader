@@ -661,15 +661,24 @@ class TradingStrategy(
         val bullishCross = stochasticK > stochasticD && prevStochasticK <= prevStochasticD && prevStochasticD < 50
         val bearishCross = stochasticK < stochasticD && prevStochasticK >= prevStochasticD && prevStochasticD > 50
 
+        val adaptive = AdaptiveCalculator.computeAll(
+            atr = atr, adx = indicators.adx, adxThreshold = strategyConfig.adxThreshold,
+            baseSlMultiplier = 0.8, baseRiskReward = strategyConfig.scalpMinRr,
+            baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
+            baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
+            minimumStopDistance = symbolConfig.minimumStopDistance, tickSize = symbolConfig.tickSize,
+            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled, adaptiveTpEnabled = strategyConfig.adaptiveTpEnabled,
+            adaptiveBeEnabled = strategyConfig.adaptiveBeEnabled
+        )
+
         if (isStrongBullish && bullishCross && lastClosedCandle.close > emaFast && emaFast > emaSlow) {
             val entryPrice = currentQuote.ask
-            val slDistance = max(atr * 0.8, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice - slDistance
-            val takeProfit = entryPrice + slDistance * strategyConfig.scalpMinRr
-            val riskReward = (takeProfit - entryPrice) / slDistance
+            val stopLoss = entryPrice - adaptive.slDistance
+            val takeProfit = entryPrice + adaptive.tpDistance
+            val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.BUY,
                 price = entryPrice,
@@ -681,32 +690,23 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.BUY,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = indicators.adx,
-                    atr = atr,
-                    trendCheck = true,
-                    adxCheck = false,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = indicators.adx, atr = atr,
+                    trendCheck = true, adxCheck = false, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "BUY",
-                    reason = "Strong bullish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses above D($stochasticD), price > EMA Fast, bullish trend"
+                    reason = "Strong bullish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses above D($stochasticD), price > EMA Fast, bullish trend [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
                 )
             )
         }
 
         if (isStrongBearish && bearishCross && lastClosedCandle.close < emaFast && emaFast < emaSlow) {
             val entryPrice = currentQuote.bid
-            val slDistance = max(atr * 0.8, symbolConfig.minimumStopDistance)
-            val stopLoss = entryPrice + slDistance
-            val takeProfit = entryPrice - slDistance * strategyConfig.scalpMinRr
-            val riskReward = (entryPrice - takeProfit) / slDistance
+            val stopLoss = entryPrice + adaptive.slDistance
+            val takeProfit = entryPrice - adaptive.tpDistance
+            val riskReward = if (adaptive.slDistance > 0) adaptive.tpDistance / adaptive.slDistance else 0.0
 
             return Signal(
-                id = UUID.randomUUID().toString(),
+                id = java.util.UUID.randomUUID().toString(),
                 symbol = symbolConfig.symbol,
                 direction = TradeDirection.SELL,
                 price = entryPrice,
@@ -718,19 +718,11 @@ class TradingStrategy(
                 explanation = SignalExplanation(
                     symbol = symbolConfig.symbol,
                     direction = TradeDirection.SELL,
-                    emaFast = emaFast,
-                    emaSlow = emaSlow,
-                    adx = indicators.adx,
-                    atr = atr,
-                    trendCheck = true,
-                    adxCheck = false,
-                    pullbackCheck = false,
-                    candleCheck = true,
-                    spreadCheck = spreadCheck,
-                    riskCheck = riskCheck,
-                    sessionCheck = sessionCheck,
+                    emaFast = emaFast, emaSlow = emaSlow, adx = indicators.adx, atr = atr,
+                    trendCheck = true, adxCheck = false, pullbackCheck = false, candleCheck = true,
+                    spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "SELL",
-                    reason = "Strong bearish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses below D($stochasticD), price < EMA Fast, bearish trend"
+                    reason = "Strong bearish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses below D($stochasticD), price < EMA Fast, bearish trend [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
                 )
             )
         }
