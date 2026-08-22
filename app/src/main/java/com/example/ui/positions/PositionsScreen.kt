@@ -60,7 +60,14 @@ fun PositionsScreen() {
     }
 
     if (openPositions.isEmpty()) {
-        EmptyPositionsCard()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BackgroundDark)
+                .padding(horizontal = 16.dp, vertical = 16.dp)
+        ) {
+            EmptyPositionsCard()
+        }
     } else {
         val totalPnL = openPositions.sumOf { it.unrealizedProfit }
         val longPositions = openPositions.count { it.direction == TradeDirection.BUY }
@@ -71,9 +78,10 @@ fun PositionsScreen() {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .background(BackgroundDark)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
+            contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp)
         ) {
             item {
                 PortfolioOverviewCard(
@@ -144,7 +152,7 @@ private fun PortfolioOverviewCard(
                 color = if (isProfit) EmeraldContainer else CrimsonContainer
             ) {
                 Text(
-                    text = "${if (isProfit) "+" else ""}%.2f".format(totalPnL),
+                    text = "${if (isProfit) "+" else ""}${"%.2f".format(totalPnL)}",
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
@@ -254,7 +262,7 @@ private fun PositionBanner(
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = "${if (isPositive) "+" else ""}%.2f".format(pnl),
+                text = "${if (isPositive) "+" else ""}${"%.2f".format(pnl)}",
                 fontSize = 11.sp,
                 color = if (isPositive) EmeraldGain else CrimsonLoss,
                 fontWeight = FontWeight.SemiBold,
@@ -479,7 +487,7 @@ private fun ExpandablePositionCard(
 
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            text = "${if (isProfit) "+" else ""}%.2f".format(position.unrealizedProfit),
+                            text = "${if (isProfit) "+" else ""}${"%.2f".format(position.unrealizedProfit)}",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isProfit) EmeraldGain else CrimsonLoss,
@@ -490,7 +498,7 @@ private fun ExpandablePositionCard(
                                 ((position.currentPrice - position.entryPrice) / position.entryPrice * 100.0) * (if (isLong) 1 else -1)
                             } else 0.0
                             Text(
-                                text = "${if (pct >= 0) "+" else ""}%.2f%%".format(pct),
+                                text = "${if (pct >= 0) "+" else ""}${"%.2f".format(pct)}%%",
                                 fontSize = 11.sp,
                                 color = if (isProfit) EmeraldGain else CrimsonLoss,
                                 fontFamily = FontFamily.Monospace
@@ -585,14 +593,14 @@ private fun ExpandablePositionCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (position.unrealizedR >= 1.0f) {
+                        if (position.unrealizedR >= 1.0) {
                             RiskBadge(
                                 text = "Break-even locked @ 1R",
                                 color = EmeraldGain,
                                 bgColor = EmeraldContainer
                             )
                         }
-                        if (position.unrealizedR >= 1.5f) {
+                        if (position.unrealizedR >= 1.5) {
                             RiskBadge(
                                 text = "Trailing active @ 1.5R",
                                 color = GoldHero,

@@ -8,6 +8,7 @@ import com.example.data.entities.SignalEntity
 import com.example.data.entities.SystemEventEntity
 import com.example.data.entities.WatchlistItemEntity
 import com.example.domain.model.*
+import com.example.domain.model.BrokerAccount
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -595,6 +596,78 @@ class FirestoreRepository(private val context: Context) {
             if (col != null) col.get().await().size() else localWatchlist.size
         } catch (e: Exception) {
             localWatchlist.size
+        }
+    }
+
+    // ─── Broker Accounts ──────────────────────────────────────────────────
+
+    private val localBrokerAccounts = ConcurrentHashMap<String, BrokerAccount>()
+    private val _localBrokerAccountsFlow = MutableStateFlow<List<BrokerAccount>>(emptyList())
+
+    val brokerAccountsFlow: Flow<List<BrokerAccount>> = callbackFlow {
+        trySend(localBrokerAccounts.values.toList())
+        val col = userCollection("broker_accounts")
+        if (col != null) {
+            val registration = col.addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) {
+                    trySend(localBrokerAccounts.values.toList())
+                    return@addSnapshotListener
+                }
+                val accounts = snapshot.documents.mapNotNull { doc ->
+                    doc.data?.let { FirestoreMapper.mapToBrokerAccount(it) }
+                }
+                localBrokerAccounts.clear()
+                accounts.forEach { localBrokerAccounts[it.id] = it }
+                trySend(accounts)
+            }
+            listeners.add(registration)
+            awaitClose { registration.remove() }
+        } else {
+            val job = CoroutineScope(Dispatchers.Default).launch {
+                _localBrokerAccountsFlow.collect { trySend(it) }
+            }
+            awaitClose { job.cancel() }
+        }
+    }
+
+    suspend fun getBrokerAccounts(): List<BrokerAccount> {
+        return try {
+            val col = userCollection("broker_accounts")
+            if (col != null) {
+                val snapshot = col.get().await()
+                val accounts = snapshot.documents.mapNotNull { doc ->
+                    doc.data?.let { FirestoreMapper.mapToBrokerAccount(it) }
+                }
+                localBrokerAccounts.clear()
+                accounts.forEach { localBrokerAccounts[it.id] = it }
+                accounts
+            } else {
+                localBrokerAccounts.values.toList()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get broker accounts from Firestore: ${e.message}")
+            localBrokerAccounts.values.toList()
+        }
+    }
+
+    suspend fun saveBrokerAccount(account: BrokerAccount) {
+        localBrokerAccounts[account.id] = account
+        _localBrokerAccountsFlow.value = localBrokerAccounts.values.toList()
+        try {
+            userCollection("broker_accounts")?.document(account.id)
+                ?.set(FirestoreMapper.brokerAccountToMap(account))?.await()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save broker account to Firestore: ${e.message}")
+        }
+    }
+
+    suspend fun deleteBrokerAccount(accountId: String) {
+        localBrokerAccounts.remove(accountId)
+        _localBrokerAccountsFlow.value = localBrokerAccounts.values.toList()
+        try {
+            userCollection("broker_accounts")?.document(accountId)?.delete()?.await()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to delete broker account from Firestore: ${e.message}")
         }
     }
 

@@ -26,7 +26,8 @@ class TradingEngine(
     val repository: FirestoreRepository,
     private val notificationManager: AppNotificationManager,
     private val brokerFactory: (TradingMode) -> BrokerAdapter,
-    val marketDataProvider: MarketDataProvider = PaperMarketDataProvider()
+    val marketDataProvider: MarketDataProvider = PaperMarketDataProvider(),
+    val accountManager: AccountManager? = null
 ) {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -787,6 +788,33 @@ class TradingEngine(
         delay(1000)
         initialize()
         start()
+    }
+
+    suspend fun switchBrokerAccount(accountId: String) {
+        if (accountManager == null) return
+
+        val wasRunning = engineJob?.isActive == true
+        if (wasRunning) {
+            stop("Switching to account $accountId")
+        }
+
+        accountManager.switchToAccount(accountId)
+        val config = repository.getOrCreateConfig()
+        val mode = runCatching { TradingMode.valueOf(config.mode) }.getOrDefault(TradingMode.PAPER)
+        activeBroker = brokerFactory(mode)
+        positionReconciler = PositionReconciler(repository, activeBroker)
+
+        repository.logEvent(
+            LogLevel.INFO,
+            "TradingEngine",
+            "ACCOUNT_SWITCHED",
+            "Switched to broker account: $accountId"
+        )
+
+        if (wasRunning) {
+            delay(500)
+            start()
+        }
     }
 
     fun getCandles(symbol: String): List<Candle> = candlesMap[symbol]?.toList() ?: emptyList()

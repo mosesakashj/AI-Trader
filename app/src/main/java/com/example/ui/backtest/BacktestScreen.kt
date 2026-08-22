@@ -585,30 +585,29 @@ fun BacktestScreen() {
                                 )
                                 if (trade.closeReason != null) {
                                     val reasonColor = when (trade.closeReason) {
-                                        com.example.domain.model.CloseReason.TAKE_PROFIT -> EmeraldGain
-                                        com.example.domain.model.CloseReason.STOP_LOSS -> CrimsonLoss
-                                        com.example.domain.model.CloseReason.BREAK_EVEN -> CyanLight
-                                        com.example.domain.model.CloseReason.TRAILING_STOP -> GoldHero
+                                        CloseReason.TAKE_PROFIT -> EmeraldGain
+                                        CloseReason.STOP_LOSS -> CrimsonLoss
+                                        CloseReason.BREAK_EVEN -> CyanLight
+                                        CloseReason.TRAILING_STOP -> GoldHero
                                         else -> TextSecondary
                                     }
                                     val reasonBg = when (trade.closeReason) {
-                                        com.example.domain.model.CloseReason.TAKE_PROFIT -> EmeraldContainer
-                                        com.example.domain.model.CloseReason.STOP_LOSS -> CrimsonContainer
-                                        com.example.domain.model.CloseReason.BREAK_EVEN -> CyanContainer
-                                        com.example.domain.model.CloseReason.TRAILING_STOP -> GoldContainer
+                                        CloseReason.TAKE_PROFIT -> EmeraldContainer
+                                        CloseReason.STOP_LOSS -> CrimsonContainer
+                                        CloseReason.BREAK_EVEN -> CyanContainer
+                                        CloseReason.TRAILING_STOP -> GoldContainer
                                         else -> SurfaceVariantDark
                                     }
                                     val reasonLabel = when (trade.closeReason) {
-                                        com.example.domain.model.CloseReason.TAKE_PROFIT -> "TP"
-                                        com.example.domain.model.CloseReason.STOP_LOSS -> "SL"
-                                        com.example.domain.model.CloseReason.BREAK_EVEN -> "BE"
-                                        com.example.domain.model.CloseReason.TRAILING_STOP -> "TS"
-                                        com.example.domain.model.CloseReason.MANUAL -> "MNL"
-                                        com.example.domain.model.CloseReason.TIME_EXIT -> "TIME"
-                                        com.example.domain.model.CloseReason.EOD -> "EOD"
-                                        com.example.domain.model.CloseReason.SPREAD -> "SPR"
-                                        com.example.domain.model.CloseReason.MARGIN_CALL -> "MGN"
-                                        else -> trade.closeReason!!.name
+                                        CloseReason.TAKE_PROFIT -> "TP"
+                                        CloseReason.STOP_LOSS -> "SL"
+                                        CloseReason.BREAK_EVEN -> "BE"
+                                        CloseReason.TRAILING_STOP -> "TS"
+                                        CloseReason.TREND_REVERSAL -> "TREV"
+                                        CloseReason.MANUAL -> "MNL"
+                                        CloseReason.EMERGENCY_STOP -> "EMRG"
+                                        CloseReason.SAFE_MODE -> "SAFE"
+                                        CloseReason.EXPIRED -> "EXP"
                                     }
                                     Surface(color = reasonBg, shape = RoundedCornerShape(4.dp)) {
                                         Text(
@@ -662,7 +661,7 @@ fun BacktestScreen() {
                             ) {
                                 Text("SL: ${trade.stopLoss}", style = MaterialTheme.typography.labelSmall, color = CrimsonLoss)
                                 Text("TP: ${trade.takeProfit}", style = MaterialTheme.typography.labelSmall, color = EmeraldGain)
-                                if (trade.slippage != null && trade.slippage > 0) {
+                                if (trade.slippage > 0) {
                                     Text("Slip: ${"%.1f".format(trade.slippage)}", style = MaterialTheme.typography.labelSmall, color = GoldHero)
                                 }
                             }

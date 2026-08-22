@@ -5,6 +5,7 @@ import com.example.data.entities.HeartbeatEntity
 import com.example.data.entities.SignalEntity
 import com.example.data.entities.SystemEventEntity
 import com.example.domain.model.*
+import com.example.domain.model.BrokerAccount
 
 object FirestoreMapper {
 
@@ -298,5 +299,29 @@ object FirestoreMapper {
         timestamp = (map["timestamp"] as? Number)?.toLong() ?: 0L,
         status = map["status"] as? String ?: "UNKNOWN",
         details = map["details"] as? String ?: ""
+    )
+
+    fun brokerAccountToMap(account: BrokerAccount): Map<String, Any> = mapOf(
+        "id" to account.id,
+        "label" to account.label,
+        "server" to account.server,
+        "accountId" to account.accountId,
+        "password" to account.password,
+        "gatewayUrl" to account.gatewayUrl,
+        "apiKey" to account.apiKey,
+        "isActive" to account.isActive,
+        "createdAt" to account.createdAt
+    )
+
+    fun mapToBrokerAccount(map: Map<String, Any>): BrokerAccount = BrokerAccount(
+        id = map["id"] as? String ?: "",
+        label = map["label"] as? String ?: "",
+        server = map["server"] as? String ?: "Exness-MT5Real",
+        accountId = map["accountId"] as? String ?: "",
+        password = map["password"] as? String ?: "",
+        gatewayUrl = map["gatewayUrl"] as? String ?: "",
+        apiKey = map["apiKey"] as? String ?: "",
+        isActive = map["isActive"] as? Boolean ?: false,
+        createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
     )
 }

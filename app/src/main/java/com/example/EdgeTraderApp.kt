@@ -3,6 +3,7 @@ package com.example
 import android.app.Application
 import com.example.ai.AiManager
 import com.example.auth.AuthManager
+import com.example.broker.AccountManager
 import com.example.broker.DemoBrokerAdapter
 import com.example.broker.LiveBrokerAdapter
 import com.example.broker.PaperBrokerAdapter
@@ -41,6 +42,8 @@ class EdgeTraderApp : Application() {
         private set
     lateinit var firestoreRepository: FirestoreRepository
         private set
+    lateinit var accountManager: AccountManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +54,7 @@ class EdgeTraderApp : Application() {
         authManager = AuthManager(this)
         firestoreRepository = FirestoreRepository(this)
         secureStorage = SecureStorage(this)
+        accountManager = AccountManager(firestoreRepository, secureStorage)
         androidNotifier = AndroidNotifier(this)
         telegramNotifier = TelegramNotifier(secureStorage, firestoreRepository)
         notificationManager = AppNotificationManager(androidNotifier, telegramNotifier)
@@ -65,7 +69,8 @@ class EdgeTraderApp : Application() {
                     TradingMode.LIVE -> LiveBrokerAdapter(secureStorage)
                 }
             },
-            marketDataProvider = marketDataProvider
+            marketDataProvider = marketDataProvider,
+            accountManager = accountManager
         )
         aiManager = AiManager(secureStorage)
 
@@ -87,6 +92,7 @@ class EdgeTraderApp : Application() {
             // Wait for auth state to resolve before initializing engine
             authManager.authState.first { it !is com.example.auth.AuthState.Loading }
             delay(200) // Allow Firestore userId to propagate
+            accountManager.initialize()
             tradingEngine.initialize()
         }
     }

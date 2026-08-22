@@ -258,3 +258,15 @@ data class OrderResult(
     val slippage: Double = 0.0,
     val errorMessage: String = ""
 )
+
+data class BrokerAccount(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val label: String = "",
+    val server: String = "Exness-MT5Real",
+    val accountId: String = "",
+    val password: String = "",
+    val gatewayUrl: String = "",
+    val apiKey: String = "",
+    val isActive: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)

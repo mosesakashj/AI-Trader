@@ -49,11 +49,16 @@ class LiveBrokerAdapter(
 
         if (gatewayUrl.isNotBlank()) {
             try {
-                val fullUrl = if (gatewayUrl.endsWith("/")) "${gatewayUrl}health" else "$gatewayUrl/health"
+                val separator = if (gatewayUrl.endsWith("/")) "" else "/"
+                val fullUrl = "${gatewayUrl}${separator}health"
                 val reqBuilder = Request.Builder().url(fullUrl)
                 val apiKey = secureStorage?.getBrokerApiKey()
                 if (!apiKey.isNullOrBlank()) {
                     reqBuilder.header("Authorization", "Bearer $apiKey")
+                }
+                if (accountId.isNotBlank()) {
+                    reqBuilder.header("X-Account-Id", accountId)
+                    reqBuilder.header("X-Account-Server", secureStorage?.getBrokerServer() ?: "")
                 }
                 client.newCall(reqBuilder.build()).execute().use { resp ->
                     isConnectedState = resp.isSuccessful
@@ -81,11 +86,16 @@ class LiveBrokerAdapter(
 
         if (!gatewayUrl.isNullOrBlank()) {
             try {
-                val fullUrl = if (gatewayUrl.endsWith("/")) "${gatewayUrl}account" else "$gatewayUrl/account"
+                val separator = if (gatewayUrl.endsWith("/")) "" else "/"
+                val fullUrl = "${gatewayUrl}${separator}account"
                 val reqBuilder = Request.Builder().url(fullUrl)
                 val apiKey = secureStorage?.getBrokerApiKey()
                 if (!apiKey.isNullOrBlank()) {
                     reqBuilder.header("Authorization", "Bearer $apiKey")
+                }
+                if (accountId.isNotBlank()) {
+                    reqBuilder.header("X-Account-Id", accountId)
+                    reqBuilder.header("X-Account-Server", secureStorage?.getBrokerServer() ?: "")
                 }
                 client.newCall(reqBuilder.build()).execute().use { resp ->
                     if (resp.isSuccessful) {
@@ -99,38 +109,30 @@ class LiveBrokerAdapter(
                             val leverage = json.optInt("leverage", 200)
                             val currency = json.optString("currency", "USD")
 
-                            val updated = AccountInfo(
-                                balance = balance,
-                                equity = equity,
-                                freeMargin = freeMargin,
-                                margin = margin,
-                                leverage = leverage,
-                                currency = currency,
-                                mode = TradingMode.LIVE,
-                                serverTime = System.currentTimeMillis()
-                            )
-                            lastAccountInfo = updated
-                            return@withContext updated
+                            if (balance > 0.0 || equity > 0.0) {
+                                val updated = AccountInfo(
+                                    balance = balance,
+                                    equity = equity,
+                                    freeMargin = freeMargin,
+                                    margin = margin,
+                                    leverage = leverage,
+                                    currency = currency,
+                                    mode = TradingMode.LIVE,
+                                    serverTime = System.currentTimeMillis()
+                                )
+                                lastAccountInfo = updated
+                                return@withContext updated
+                            }
                         }
+                    } else {
+                        Log.w("LiveBrokerAdapter", "Account endpoint returned ${resp.code}: ${resp.message}")
                     }
                 }
             } catch (e: Exception) {
                 Log.w("LiveBrokerAdapter", "Fetch live account info error: ${e.message}")
             }
-        }
-
-        if (accountId.isNotBlank() && lastAccountInfo.balance == 0.0) {
-            // Display active configured Exness account placeholder until gateway syncs
-            lastAccountInfo = AccountInfo(
-                balance = 5000.0,
-                equity = 5000.0,
-                freeMargin = 5000.0,
-                margin = 0.0,
-                leverage = 200,
-                currency = "USD",
-                mode = TradingMode.LIVE,
-                serverTime = System.currentTimeMillis()
-            )
+        } else {
+            Log.d("LiveBrokerAdapter", "No gateway URL configured, cannot fetch live account balance")
         }
 
         lastAccountInfo
@@ -172,13 +174,20 @@ class LiveBrokerAdapter(
 
     override suspend fun getPositions(): List<Position> = withContext(Dispatchers.IO) {
         val gatewayUrl = secureStorage?.getBrokerGatewayUrl()?.trim()
+        val accountId = secureStorage?.getBrokerAccountId()?.trim() ?: ""
+
         if (!gatewayUrl.isNullOrBlank()) {
             try {
-                val fullUrl = if (gatewayUrl.endsWith("/")) "${gatewayUrl}positions" else "$gatewayUrl/positions"
+                val separator = if (gatewayUrl.endsWith("/")) "" else "/"
+                val fullUrl = "${gatewayUrl}${separator}positions"
                 val reqBuilder = Request.Builder().url(fullUrl)
                 val apiKey = secureStorage?.getBrokerApiKey()
                 if (!apiKey.isNullOrBlank()) {
                     reqBuilder.header("Authorization", "Bearer $apiKey")
+                }
+                if (accountId.isNotBlank()) {
+                    reqBuilder.header("X-Account-Id", accountId)
+                    reqBuilder.header("X-Account-Server", secureStorage?.getBrokerServer() ?: "")
                 }
                 client.newCall(reqBuilder.build()).execute().use { resp ->
                     if (resp.isSuccessful) {
@@ -188,6 +197,10 @@ class LiveBrokerAdapter(
                             val liveList = mutableListOf<Position>()
                             for (i in 0 until arr.length()) {
                                 val item = arr.getJSONObject(i)
+                                val posAccountId = item.optString("accountId", item.optString("account", ""))
+                                if (accountId.isNotBlank() && posAccountId.isNotBlank() && posAccountId != accountId) {
+                                    continue
+                                }
                                 liveList.add(
                                     Position(
                                         id = item.optString("id", UUID.randomUUID().toString()),
@@ -252,7 +265,8 @@ class LiveBrokerAdapter(
         val gatewayUrl = secureStorage?.getBrokerGatewayUrl()?.trim()
         if (!gatewayUrl.isNullOrBlank()) {
             try {
-                val fullUrl = if (gatewayUrl.endsWith("/")) "${gatewayUrl}order" else "$gatewayUrl/order"
+                val separator = if (gatewayUrl.endsWith("/")) "" else "/"
+                val fullUrl = "${gatewayUrl}${separator}order"
                 val payload = JSONObject().apply {
                     put("symbol", order.symbol)
                     put("action", if (order.direction == TradeDirection.BUY) "BUY" else "SELL")
@@ -272,6 +286,8 @@ class LiveBrokerAdapter(
                 if (apiKey.isNotBlank()) {
                     reqBuilder.header("Authorization", "Bearer $apiKey")
                 }
+                reqBuilder.header("X-Account-Id", secureStorage.getBrokerAccountId())
+                reqBuilder.header("X-Account-Server", secureStorage.getBrokerServer())
 
                 client.newCall(reqBuilder.build()).execute().use { resp ->
                     if (resp.isSuccessful) {
@@ -346,7 +362,8 @@ class LiveBrokerAdapter(
 
         if (!gatewayUrl.isNullOrBlank()) {
             try {
-                val fullUrl = if (gatewayUrl.endsWith("/")) "${gatewayUrl}positions/$positionId/close" else "$gatewayUrl/positions/$positionId/close"
+                val separator = if (gatewayUrl.endsWith("/")) "" else "/"
+                val fullUrl = "${gatewayUrl}${separator}positions/$positionId/close"
                 val payload = JSONObject().apply {
                     put("reason", reason.name)
                 }
@@ -389,7 +406,8 @@ class LiveBrokerAdapter(
 
         if (!gatewayUrl.isNullOrBlank()) {
             try {
-                val fullUrl = if (gatewayUrl.endsWith("/")) "${gatewayUrl}positions/$positionId/modify" else "$gatewayUrl/positions/$positionId/modify"
+                val separator = if (gatewayUrl.endsWith("/")) "" else "/"
+                val fullUrl = "${gatewayUrl}${separator}positions/$positionId/modify"
                 val payload = JSONObject().apply {
                     put("stopLoss", newStopLoss)
                     if (newTakeProfit > 0.0) put("takeProfit", newTakeProfit)
