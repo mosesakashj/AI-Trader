@@ -35,6 +35,7 @@ import com.example.ui.markets.MarketsScreen
 import com.example.ui.navigation.Screen
 import com.example.ui.navigation.bottomNavItems
 import com.example.ui.navigation.drawerNavItems
+import com.example.ui.news.NewsScreen
 import com.example.ui.positions.PositionsScreen
 import com.example.ui.risk.RiskScreen
 import com.example.ui.security.SecurityDocumentationScreen
@@ -42,10 +43,8 @@ import com.example.ui.settings.SettingsScreen
 import com.example.ui.strategy.StrategyScreen
 import com.example.ui.watchlist.WatchlistScreen
 import com.example.ui.theme.*
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
-@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val dashboardViewModel: DashboardViewModel by viewModels()
@@ -60,7 +59,7 @@ class MainActivity : ComponentActivity() {
                 val authState by authManager.authState.collectAsState()
 
                 when {
-                    authManager.shouldShowLogin() && authState is AuthState.Loading -> {
+                    authManager.shouldShowLogin() && authState !is AuthState.SignedIn -> {
                         LoginScreen(
                             authManager = authManager,
                             onSignInSuccess = { /* auth state listener updates automatically */ },
@@ -239,14 +238,17 @@ private fun MainAppContent(dashboardViewModel: DashboardViewModel) {
                             onNavigateToStrategy = { navController.navigate(Screen.Strategy.route) }
                         )
                     }
-                                composable(Screen.Markets.route) {
-                                    MarketsScreen()
-                                }
-                                composable(Screen.Watchlist.route) {
-                                    WatchlistScreen()
-                                }
+                    composable(Screen.Markets.route) {
+                        MarketsScreen()
+                    }
+                    composable(Screen.Watchlist.route) {
+                        WatchlistScreen()
+                    }
                     composable(Screen.Strategy.route) {
                         StrategyScreen()
+                    }
+                    composable(Screen.News.route) {
+                        NewsScreen()
                     }
                     composable(Screen.Positions.route) {
                         PositionsScreen()

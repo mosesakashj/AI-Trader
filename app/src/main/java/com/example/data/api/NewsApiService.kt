@@ -15,11 +15,6 @@ class NewsApiService {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private val moshi = Moshi.Builder().build()
-    private val newsResponseType = Types.newParameterizedInstance(
-        Map::class.java, String::class.java, Any::class.java
-    )
-
     suspend fun getMarketNews(symbols: List<String> = emptyList()): List<NewsArticle> = withContext(Dispatchers.IO) {
         try {
             val newsList = mutableListOf<NewsArticle>()

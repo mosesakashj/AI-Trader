@@ -15,32 +15,43 @@ class SecureStorage(context: Context) {
     private val keyStoreAlias = "EdgeTraderKeyAlias"
     private val androidKeyStore = "AndroidKeyStore"
     private val transformation = "AES/GCM/NoPadding"
+    private var isKeyStoreAvailable = false
 
     init {
         initKeyStore()
     }
 
     private fun initKeyStore() {
-        val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
-        if (!keyStore.containsAlias(keyStoreAlias)) {
-            val keyGenerator = KeyGenerator.getInstance("AES", androidKeyStore)
-            val keyGenParameterSpec = android.security.keystore.KeyGenParameterSpec.Builder(
-                keyStoreAlias,
-                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build()
+        try {
+            val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
+            if (!keyStore.containsAlias(keyStoreAlias)) {
+                val keyGenerator = KeyGenerator.getInstance("AES", androidKeyStore)
+                val keyGenParameterSpec = android.security.keystore.KeyGenParameterSpec.Builder(
+                    keyStoreAlias,
+                    android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build()
 
-            keyGenerator.init(keyGenParameterSpec)
-            keyGenerator.generateKey()
+                keyGenerator.init(keyGenParameterSpec)
+                keyGenerator.generateKey()
+            }
+            isKeyStoreAvailable = true
+        } catch (e: Throwable) {
+            isKeyStoreAvailable = false
         }
     }
 
-    private fun getSecretKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
-        return keyStore.getKey(keyStoreAlias, null) as SecretKey
+    private fun getSecretKey(): SecretKey? {
+        if (!isKeyStoreAvailable) return null
+        return try {
+            val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
+            keyStore.getKey(keyStoreAlias, null) as? SecretKey
+        } catch (e: Throwable) {
+            null
+        }
     }
 
     fun saveEncryptedString(key: String, rawValue: String) {
@@ -48,45 +59,51 @@ class SecureStorage(context: Context) {
             prefs.edit().remove(key).remove("${key}_iv").apply()
             return
         }
-        try {
-            val cipher = Cipher.getInstance(transformation)
-            cipher.init(Cipher.ENCRYPT_MODE, getSecretKey())
-            val iv = cipher.iv
-            val encryptedBytes = cipher.doFinal(rawValue.toByteArray(Charsets.UTF_8))
+        val secretKey = getSecretKey()
+        if (secretKey != null) {
+            try {
+                val cipher = Cipher.getInstance(transformation)
+                cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+                val iv = cipher.iv
+                val encryptedBytes = cipher.doFinal(rawValue.toByteArray(Charsets.UTF_8))
 
-            val encryptedB64 = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
-            val ivB64 = Base64.encodeToString(iv, Base64.NO_WRAP)
+                val encryptedB64 = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
+                val ivB64 = Base64.encodeToString(iv, Base64.NO_WRAP)
 
-            prefs.edit()
-                .putString(key, encryptedB64)
-                .putString("${key}_iv", ivB64)
-                .apply()
-        } catch (e: Exception) {
-            // Fallback for JVM test environments without AndroidKeyStore
-            prefs.edit().putString(key, Base64.encodeToString(rawValue.toByteArray(), Base64.NO_WRAP)).apply()
+                prefs.edit()
+                    .putString(key, encryptedB64)
+                    .putString("${key}_iv", ivB64)
+                    .apply()
+                return
+            } catch (e: Exception) {
+                // Fall through to fallback
+            }
         }
+        // Fallback for JVM test environments without AndroidKeyStore
+        prefs.edit().putString(key, Base64.encodeToString(rawValue.toByteArray(), Base64.NO_WRAP)).apply()
     }
 
     fun getDecryptedString(key: String): String {
         val encryptedB64 = prefs.getString(key, null) ?: return ""
         val ivB64 = prefs.getString("${key}_iv", null)
+        val secretKey = getSecretKey()
 
-        if (ivB64 == null) {
-            // Fallback decoding
-            return runCatching { String(Base64.decode(encryptedB64, Base64.NO_WRAP)) }.getOrDefault("")
+        if (ivB64 != null && secretKey != null) {
+            try {
+                val cipher = Cipher.getInstance(transformation)
+                val iv = Base64.decode(ivB64, Base64.NO_WRAP)
+                val spec = GCMParameterSpec(128, iv)
+                cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
+                val encryptedBytes = Base64.decode(encryptedB64, Base64.NO_WRAP)
+                val decryptedBytes = cipher.doFinal(encryptedBytes)
+                return String(decryptedBytes, Charsets.UTF_8)
+            } catch (e: Exception) {
+                // Fall through
+            }
         }
 
-        return try {
-            val cipher = Cipher.getInstance(transformation)
-            val iv = Base64.decode(ivB64, Base64.NO_WRAP)
-            val spec = GCMParameterSpec(128, iv)
-            cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), spec)
-            val encryptedBytes = Base64.decode(encryptedB64, Base64.NO_WRAP)
-            val decryptedBytes = cipher.doFinal(encryptedBytes)
-            String(decryptedBytes, Charsets.UTF_8)
-        } catch (e: Exception) {
-            ""
-        }
+        // Fallback decoding
+        return runCatching { String(Base64.decode(encryptedB64, Base64.NO_WRAP)) }.getOrDefault("")
     }
 
     fun getTelegramToken(): String = getDecryptedString("telegram_bot_token")

@@ -221,7 +221,6 @@ fun DashboardScreen(
                         value = "${if (isPositive) "+" else ""}$${"%.2f".format(pnl)}",
                         subtitle = if (isPositive) "Profitable session" else "Within daily risk limits",
                         valueColor = if (isPositive) EmeraldGain else CrimsonLoss,
-                        isPositive = isPositive,
                         modifier = Modifier.weight(1f)
                     )
                     MetricCard(
@@ -525,25 +524,23 @@ fun DashboardScreen(
                         val exp = sig.explanation
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Evaluated ${sig.symbol} (${sig.direction}): ${sig.decision}",
+                            text = "Evaluated ${sig.symbol} (${sig.direction}): ${exp.decision}",
                             fontWeight = FontWeight.Bold,
-                            color = if (sig.decision == SignalDecision.GO) EmeraldGain else GoldHero
+                            color = if (exp.decision == "BUY" || exp.decision == "SELL") EmeraldGain else GoldHero
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = sig.reason,
+                            text = exp.reason,
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary
                         )
 
-                        if (exp != null) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                FactorChip("EMA Trend Alignment", exp.trendCheck, Modifier.fillMaxWidth())
-                                FactorChip("ADX Momentum (>= ${config?.adxThreshold})", exp.adxCheck, Modifier.fillMaxWidth())
-                                FactorChip("Pullback to EMA Band", exp.pullbackCheck, Modifier.fillMaxWidth())
-                                FactorChip("Closed Bar Confirmation", exp.candleCheck, Modifier.fillMaxWidth())
-                            }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FactorChip("EMA Trend Alignment", exp.trendCheck, Modifier.fillMaxWidth())
+                            FactorChip("ADX Momentum (>= ${config?.adxThreshold ?: 25.0})", exp.adxCheck, Modifier.fillMaxWidth())
+                            FactorChip("Pullback to EMA Band", exp.pullbackCheck, Modifier.fillMaxWidth())
+                            FactorChip("Closed Bar Confirmation", exp.candleCheck, Modifier.fillMaxWidth())
                         }
                     } else {
                         Spacer(modifier = Modifier.height(8.dp))

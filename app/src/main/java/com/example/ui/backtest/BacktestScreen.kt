@@ -360,30 +360,29 @@ fun BacktestScreen() {
                         if (res.equityCurve.size >= 2) {
                             Text("Simulated Account Equity Curve", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                             SparklineChart(
-                                dataPoints = res.equityCurve.map { it.second },
+                                points = res.equityCurve,
                                 lineColor = if (res.totalProfitLoss >= 0) EmeraldGain else CrimsonLoss,
-                                isPositive = res.totalProfitLoss >= 0,
                                 modifier = Modifier.fillMaxWidth().height(120.dp)
                             )
                         }
 
                         // Quantitative KPI Grid
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MetricCard("Sharpe Ratio", "%.2f".format(res.sharpeRatio), isPositive = res.sharpeRatio >= 1.0, modifier = Modifier.weight(1f))
-                            MetricCard("Profit Factor", "%.2f".format(res.profitFactor), isPositive = res.profitFactor >= 1.5, modifier = Modifier.weight(1f))
-                            MetricCard("Recovery Factor", "%.2f".format(res.recoveryFactor), isPositive = res.recoveryFactor >= 1.0, modifier = Modifier.weight(1f))
+                            MetricCard("Sharpe Ratio", "%.2f".format(res.sharpeRatio), valueColor = if (res.sharpeRatio >= 1.0) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
+                            MetricCard("Profit Factor", "%.2f".format(res.profitFactor), valueColor = if (res.profitFactor >= 1.5) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
+                            MetricCard("Recovery Factor", "%.2f".format(res.recoveryFactor), valueColor = if (res.recoveryFactor >= 1.0) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MetricCard("Win Rate", "${"%.1f".format(res.winRate)}%", isPositive = res.winRate >= 50.0, modifier = Modifier.weight(1f))
-                            MetricCard("Max Drawdown", "${"%.2f".format(res.maxDrawdownPercent)}%", isPositive = res.maxDrawdownPercent <= 5.0, modifier = Modifier.weight(1f))
-                            MetricCard("Avg R-Multiple", "${"%.2f".format(res.averageR)}R", isPositive = res.averageR > 0, modifier = Modifier.weight(1f))
+                            MetricCard("Win Rate", "${"%.1f".format(res.winRate)}%", valueColor = if (res.winRate >= 50.0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
+                            MetricCard("Max Drawdown", "${"%.2f".format(res.maxDrawdownPercent)}%", valueColor = if (res.maxDrawdownPercent <= 5.0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
+                            MetricCard("Avg R-Multiple", "${"%.2f".format(res.averageR)}R", valueColor = if (res.averageR > 0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             MetricCard("Total Executions", "${res.totalTrades} (${res.winningTrades}W / ${res.losingTrades}L)", modifier = Modifier.weight(1f))
-                            MetricCard("Expectancy", "$${"%.2f".format(res.expectancy)}", isPositive = res.expectancy > 0, modifier = Modifier.weight(1f))
-                            MetricCard("Consec Losses", "${res.maxConsecutiveLosses}", isPositive = res.maxConsecutiveLosses <= 3, modifier = Modifier.weight(1f))
+                            MetricCard("Expectancy", "$${"%.2f".format(res.expectancy)}", valueColor = if (res.expectancy > 0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
+                            MetricCard("Consec Losses", "${res.maxConsecutiveLosses}", valueColor = if (res.maxConsecutiveLosses <= 3) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -709,23 +708,22 @@ fun BacktestScreen() {
                         // Portfolio Equity Curve
                         if (port.equityCurve.size >= 2) {
                             SparklineChart(
-                                dataPoints = port.equityCurve.map { it.second },
+                                points = port.equityCurve,
                                 lineColor = if (port.totalProfitLoss >= 0) EmeraldGain else CrimsonLoss,
-                                isPositive = port.totalProfitLoss >= 0,
                                 modifier = Modifier.fillMaxWidth().height(120.dp)
                             )
                         }
 
                         // Portfolio Metrics
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MetricCard("Portfolio Sharpe", "%.2f".format(port.sharpeRatio), isPositive = port.sharpeRatio >= 1.0, modifier = Modifier.weight(1f))
-                            MetricCard("Profit Factor", "%.2f".format(port.profitFactor), isPositive = port.profitFactor >= 1.5, modifier = Modifier.weight(1f))
-                            MetricCard("Win Rate", "${"%.1f".format(port.winRate)}%", isPositive = port.winRate >= 50.0, modifier = Modifier.weight(1f))
+                            MetricCard("Portfolio Sharpe", "%.2f".format(port.sharpeRatio), valueColor = if (port.sharpeRatio >= 1.0) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
+                            MetricCard("Profit Factor", "%.2f".format(port.profitFactor), valueColor = if (port.profitFactor >= 1.5) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
+                            MetricCard("Win Rate", "${"%.1f".format(port.winRate)}%", valueColor = if (port.winRate >= 50.0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MetricCard("Max Drawdown", "${"%.2f".format(port.maxDrawdownPercent)}%", isPositive = port.maxDrawdownPercent <= 8.0, modifier = Modifier.weight(1f))
-                            MetricCard("Recovery Factor", "%.2f".format(port.recoveryFactor), isPositive = port.recoveryFactor >= 1.0, modifier = Modifier.weight(1f))
+                            MetricCard("Max Drawdown", "${"%.2f".format(port.maxDrawdownPercent)}%", valueColor = if (port.maxDrawdownPercent <= 8.0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
+                            MetricCard("Recovery Factor", "%.2f".format(port.recoveryFactor), valueColor = if (port.recoveryFactor >= 1.0) EmeraldGain else TextPrimary, modifier = Modifier.weight(1f))
                             MetricCard("Total Trades", "${port.totalTrades}", modifier = Modifier.weight(1f))
                         }
 

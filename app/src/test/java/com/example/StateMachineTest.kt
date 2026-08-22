@@ -40,7 +40,7 @@ class StateMachineTest {
     }
 
     @Test
-    fun `full happy path: STOPPED to POSITION_OPEN`() {
+    fun `full happy path - STOPPED to POSITION_OPEN`() {
         assertTrue(sm.transitionTo(StateMachineState.STARTING, ""))
         assertTrue(sm.transitionTo(StateMachineState.CONNECTING, ""))
         assertTrue(sm.transitionTo(StateMachineState.SYNCING, ""))

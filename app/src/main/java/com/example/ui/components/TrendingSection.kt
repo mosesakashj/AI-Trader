@@ -1,4 +1,4 @@
-﻿package com.example.ui.components
+package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -142,7 +142,7 @@ private fun TrendingChip(
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
-            val volWidth = (item.volatility.coerceIn(0.0, 5.0) / 5.0f)
+            val volWidth = (item.volatility.coerceIn(0.0, 5.0) / 5.0).toFloat()
             Box(modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(SurfaceDark)) {
                 Box(
                     modifier = Modifier

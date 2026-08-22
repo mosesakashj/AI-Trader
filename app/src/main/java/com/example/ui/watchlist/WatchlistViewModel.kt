@@ -3,16 +3,14 @@ package com.example.ui.watchlist
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.EdgeTraderApp
 import com.example.data.entities.WatchlistItemEntity
 import com.example.data.firestore.FirestoreRepository
 import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.model.*
 import com.example.trading.TradingEngine
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 data class WatchlistUiItem(
     val symbol: String,
@@ -32,11 +30,10 @@ data class WatchlistUiItem(
     val addedAt: Long
 )
 
-@HiltViewModel
-class WatchlistViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val repository: FirestoreRepository,
-    private val engine: TradingEngine
+class WatchlistViewModel(
+    private val context: Context = EdgeTraderApp.instance,
+    private val repository: FirestoreRepository = EdgeTraderApp.instance.firestoreRepository,
+    private val engine: TradingEngine = EdgeTraderApp.instance.tradingEngine
 ) : ViewModel() {
 
     private val _uiItems = MutableStateFlow<List<WatchlistUiItem>>(emptyList())
@@ -61,7 +58,7 @@ class WatchlistViewModel @Inject constructor(
                 val items = entities.map { entity ->
                     val quote = quotes[entity.symbol]
                     val session = engine.getMarketSession(entity.symbol)
-                    val candles = engine.getCandles(entity.symbol)
+                    val candles: List<Candle> = engine.getCandles(entity.symbol)
                     val indicators = if (candles.size >= 30) IndicatorCalculator.computeLatest(candles) else null
 
                     WatchlistUiItem(

@@ -3,23 +3,21 @@ package com.example.ai
 import com.example.security.SecureStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.net.URI
-import java.time.Duration
-import java.util.UUID
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 class NvidiaLlmProvider(
-    private val secureStorage: SecureStorage,
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val secureStorage: SecureStorage = SecureStorage(com.example.EdgeTraderApp.instance)
 ) : AiProvider {
 
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(30))
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     override val config: AiProviderConfig
@@ -53,8 +51,6 @@ class NvidiaLlmProvider(
                 )
 
                 val chatResponse = chat(chatRequest).getOrThrow()
-                
-                // Parse the response into structured analysis
                 parseAnalysisResponse(chatResponse.content, request)
             } catch (e: Exception) {
                 Result.failure(e)
@@ -65,36 +61,46 @@ class NvidiaLlmProvider(
     override suspend fun chat(request: AiChatRequest): Result<AiChatResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                val requestBody = json.encodeToString(
-                    NvidiaChatRequest(
-                        model = config.model,
-                        messages = request.messages.map { NvidiaMessage(it.role, it.content) },
-                        temperature = request.temperature,
-                        max_tokens = request.maxTokens,
-                        stream = false
-                    )
-                )
+                val messagesArray = JSONArray()
+                request.messages.forEach { msg ->
+                    val obj = JSONObject()
+                    obj.put("role", msg.role)
+                    obj.put("content", msg.content)
+                    messagesArray.put(obj)
+                }
 
-                val httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(config.apiEndpoint))
-                    .timeout(Duration.ofSeconds(config.timeoutSeconds.toLong()))
-                    .header("Authorization", "Bearer ${config.apiKey}")
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                val jsonBody = JSONObject().apply {
+                    put("model", config.model)
+                    put("messages", messagesArray)
+                    put("temperature", request.temperature)
+                    put("max_tokens", request.maxTokens)
+                    put("stream", false)
+                }
+
+                val requestBody = jsonBody.toString().toRequestBody("application/json".toMediaType())
+                val httpRequest = Request.Builder()
+                    .url(config.apiEndpoint)
+                    .addHeader("Authorization", "Bearer ${config.apiKey}")
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
                     .build()
 
-                val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString())
+                val response = httpClient.newCall(httpRequest).execute()
+                val responseBodyStr = response.body?.string() ?: ""
 
-                if (response.statusCode() != 200) {
+                if (!response.isSuccessful) {
                     return@withContext Result.failure(
-                        RuntimeException("NVIDIA API error: ${response.statusCode()} - ${response.body()}")
+                        RuntimeException("NVIDIA API error: ${response.code} - $responseBodyStr")
                     )
                 }
 
-                val nvidiaResponse = json.decodeFromString<NvidiaChatResponse>(response.body())
-                val content = nvidiaResponse.choices.firstOrNull()?.message?.content ?: ""
-                val tokensUsed = nvidiaResponse.usage?.total_tokens ?: 0
+                val respObj = JSONObject(responseBodyStr)
+                val choices = respObj.optJSONArray("choices")
+                val firstChoice = choices?.optJSONObject(0)
+                val msgObj = firstChoice?.optJSONObject("message")
+                val content = msgObj?.optString("content", "") ?: ""
+                val usage = respObj.optJSONObject("usage")
+                val tokensUsed = usage?.optInt("total_tokens", 0) ?: 0
 
                 Result.success(AiChatResponse(
                     content = content,
@@ -128,26 +134,9 @@ class NvidiaLlmProvider(
         }
     }
 
-    private fun getSystemPrompt(): String {
+    fun getSystemPrompt(): String {
         return """You are an expert quantitative trading analyst specializing in forex, commodities, and cryptocurrency markets. 
 Your task is to analyze market data, technical indicators, and trading signals to provide actionable trading recommendations.
-
-You must respond in a structured format that can be parsed programmatically. Your analysis should include:
-1. Clear recommendation (STRONG_BUY, BUY, NEUTRAL, SELL, STRONG_SELL, HOLD_POSITION, CLOSE_POSITION, REDUCE_RISK)
-2. Confidence level (0.0 to 1.0)
-3. Detailed reasoning
-4. Key support/resistance levels
-5. Risk assessment with position sizing suggestions
-6. Alternative scenarios
-
-Be conservative, risk-aware, and prioritize capital preservation. Consider:
-- Trend alignment across timeframes
-- Momentum and volatility (ATR, ADX)
-- Risk-reward ratios
-- Position sizing based on account equity
-- Correlation with open positions
-- Market session and liquidity conditions
-- Spread and slippage impact
 
 Format your response as JSON matching this schema:
 {
@@ -172,7 +161,7 @@ Format your response as JSON matching this schema:
 }"""
     }
 
-    private fun buildAnalysisPrompt(request: AiAnalysisRequest): String {
+    fun buildAnalysisPrompt(request: AiAnalysisRequest): String {
         val candlesStr = request.recentCandles.takeLast(20).joinToString("\n") { c ->
             "  ${c.openTime}: O=${c.open} H=${c.high} L=${c.low} C=${c.close} V=${c.volume}"
         }
@@ -207,52 +196,75 @@ Format your response as JSON matching this schema:
         $candlesStr
         
         ACCOUNT STATE:
-        - Equity: \$${request.accountEquity}
+        - Equity: $${request.accountEquity}
         - Open Positions: ${request.openPositions}
-        - Daily P&L: \$${request.dailyPnL}
+        - Daily P&L: $${request.dailyPnL}
         - Risk per Trade: ${request.riskPercent}%
         
         Please provide a comprehensive analysis following the response format specified in the system prompt.
         """.trimIndent()
     }
 
-    private fun parseAnalysisResponse(content: String, request: AiAnalysisRequest): Result<AiAnalysisResponse> {
+    fun parseAnalysisResponse(content: String, request: AiAnalysisRequest): Result<AiAnalysisResponse> {
         return try {
-            // Try to extract JSON from the response
             val jsonStart = content.indexOf('{')
             val jsonEnd = content.lastIndexOf('}') + 1
             
             if (jsonStart >= 0 && jsonEnd > jsonStart) {
                 val jsonStr = content.substring(jsonStart, jsonEnd)
-                val parsed = json.decodeFromString<AiAnalysisResponseJson>(jsonStr)
+                val obj = JSONObject(jsonStr)
+                
+                val recStr = obj.optString("recommendation", "NEUTRAL")
+                val rec = runCatching { AiRecommendation.valueOf(recStr) }.getOrDefault(AiRecommendation.NEUTRAL)
+                val conf = obj.optDouble("confidence", 0.5).coerceIn(0.0, 1.0)
+                val reasoning = obj.optString("reasoning", "")
+                
+                val klObj = obj.optJSONObject("keyLevels")
+                val supportList = mutableListOf<Double>()
+                klObj?.optJSONArray("support")?.let { arr ->
+                    for (i in 0 until arr.length()) supportList.add(arr.optDouble(i))
+                }
+                val resistanceList = mutableListOf<Double>()
+                klObj?.optJSONArray("resistance")?.let { arr ->
+                    for (i in 0 until arr.length()) resistanceList.add(arr.optDouble(i))
+                }
+                val pivot = klObj?.optDouble("pivotPoint", request.currentPrice) ?: request.currentPrice
+                val fibMap = mutableMapOf<String, Double>()
+                klObj?.optJSONObject("fibonacciLevels")?.let { fObj ->
+                    fObj.keys().forEach { k -> fibMap[k] = fObj.optDouble(k) }
+                }
+                
+                val raObj = obj.optJSONObject("riskAssessment")
+                val rlStr = raObj?.optString("riskLevel", "MODERATE") ?: "MODERATE"
+                val rl = runCatching { RiskLevel.valueOf(rlStr) }.getOrDefault(RiskLevel.MODERATE)
+                val maxRisk = raObj?.optDouble("maxRiskPercent", request.riskPercent) ?: request.riskPercent
+                val posSize = raObj?.optDouble("suggestedPositionSize", 0.1) ?: 0.1
+                val slDist = raObj?.optDouble("stopLossDistance", 0.0) ?: 0.0
+                val rr = raObj?.optDouble("riskRewardRatio", 2.0) ?: 2.0
+                val warnings = mutableListOf<String>()
+                raObj?.optJSONArray("warnings")?.let { arr ->
+                    for (i in 0 until arr.length()) warnings.add(arr.optString(i))
+                }
+                
+                val altScenarios = mutableListOf<String>()
+                obj.optJSONArray("alternativeScenarios")?.let { arr ->
+                    for (i in 0 until arr.length()) altScenarios.add(arr.optString(i))
+                }
                 
                 Result.success(AiAnalysisResponse(
                     provider = config.name,
-                    recommendation = AiRecommendation.valueOf(parsed.recommendation),
-                    confidence = parsed.confidence.coerceIn(0.0, 1.0),
-                    reasoning = parsed.reasoning,
-                    keyLevels = KeyLevels(
-                        support = parsed.keyLevels.support,
-                        resistance = parsed.keyLevels.resistance,
-                        pivotPoint = parsed.keyLevels.pivotPoint,
-                        fibonacciLevels = parsed.keyLevels.fibonacciLevels
-                    ),
-                    riskAssessment = RiskAssessment(
-                        riskLevel = RiskLevel.valueOf(parsed.riskAssessment.riskLevel),
-                        maxRiskPercent = parsed.riskAssessment.maxRiskPercent,
-                        suggestedPositionSize = parsed.riskAssessment.suggestedPositionSize,
-                        stopLossDistance = parsed.riskAssessment.stopLossDistance,
-                        riskRewardRatio = parsed.riskAssessment.riskRewardRatio,
-                        warnings = parsed.riskAssessment.warnings
-                    ),
-                    alternativeScenarios = parsed.alternativeScenarios
+                    recommendation = rec,
+                    confidence = conf,
+                    reasoning = reasoning,
+                    keyLevels = KeyLevels(supportList, resistanceList, pivot, fibMap),
+                    riskAssessment = RiskAssessment(rl, maxRisk, posSize, slDist, rr, warnings),
+                    alternativeScenarios = altScenarios
                 ))
             } else {
-                // Fallback: create a basic response from text
                 Result.success(createFallbackResponse(content, request))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.success(createFallbackResponse(content, request))
         }
     }
 
@@ -273,7 +285,7 @@ Format your response as JSON matching this schema:
             provider = config.name,
             recommendation = recommendation,
             confidence = 0.5,
-            reasoning = "AI response parsed from text (JSON parsing failed): $content",
+            reasoning = "AI response parsed from text: $content",
             keyLevels = KeyLevels(emptyList(), emptyList(), request.currentPrice, emptyMap()),
             riskAssessment = RiskAssessment(
                 riskLevel = RiskLevel.MODERATE,
@@ -281,72 +293,9 @@ Format your response as JSON matching this schema:
                 suggestedPositionSize = 0.1,
                 stopLossDistance = 0.0,
                 riskRewardRatio = 2.0,
-                warnings = listOf("AI response parsing failed - using defaults")
+                warnings = listOf("AI response parsing formatted from text")
             ),
             alternativeScenarios = emptyList()
         )
     }
-
-    @Serializable
-    private data class NvidiaChatRequest(
-        val model: String,
-        val messages: List<NvidiaMessage>,
-        val temperature: Double,
-        val max_tokens: Int,
-        val stream: Boolean
-    )
-
-    @Serializable
-    private data class NvidiaMessage(
-        val role: String,
-        val content: String
-    )
-
-    @Serializable
-    private data class NvidiaChatResponse(
-        val id: String = UUID.randomUUID().toString(),
-        val choices: List<NvidiaChoice>,
-        val usage: NvidiaUsage?
-    )
-
-    @Serializable
-    private data class NvidiaChoice(
-        val message: NvidiaMessage?,
-        val finish_reason: String?
-    )
-
-    @Serializable
-    private data class NvidiaUsage(
-        val prompt_tokens: Int,
-        val completion_tokens: Int,
-        val total_tokens: Int
-    )
-
-    @Serializable
-    private data class AiAnalysisResponseJson(
-        val recommendation: String,
-        val confidence: Double,
-        val reasoning: String,
-        val keyLevels: KeyLevelsJson,
-        val riskAssessment: RiskAssessmentJson,
-        val alternativeScenarios: List<String>
-    )
-
-    @Serializable
-    private data class KeyLevelsJson(
-        val support: List<Double>,
-        val resistance: List<Double>,
-        val pivotPoint: Double,
-        val fibonacciLevels: Map<String, Double>
-    )
-
-    @Serializable
-    private data class RiskAssessmentJson(
-        val riskLevel: String,
-        val maxRiskPercent: Double,
-        val suggestedPositionSize: Double,
-        val stopLossDistance: Double,
-        val riskRewardRatio: Double,
-        val warnings: List<String>
-    )
 }

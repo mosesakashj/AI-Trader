@@ -1,4 +1,4 @@
-﻿package com.example.ui.components
+package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -154,7 +154,7 @@ fun ExpectedMovementCard(
 private fun ExpectedRangeBar(expectedMove: ExpectedMove) {
     val range = expectedMove.upperBand - expectedMove.lowerBand
     val pricePosition = if (range > 0) {
-        ((expectedMove.currentPrice - expectedMove.lowerBand) / range).coerceIn(0f, 1f)
+        ((expectedMove.currentPrice - expectedMove.lowerBand) / range).toFloat().coerceIn(0f, 1f)
     } else 0.5f
 
     Canvas(

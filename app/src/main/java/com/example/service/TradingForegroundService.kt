@@ -8,19 +8,17 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.example.EdgeTraderApp
 import com.example.MainActivity
 import com.example.notifications.AndroidNotifier
 import com.example.trading.TradingEngine
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
 import java.util.*
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class TradingForegroundService : Service() {
 
-    @Inject lateinit var tradingEngine: TradingEngine
+    private val tradingEngine: TradingEngine get() = EdgeTraderApp.instance.tradingEngine
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null

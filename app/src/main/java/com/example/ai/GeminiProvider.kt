@@ -3,23 +3,24 @@ package com.example.ai
 import com.example.security.SecureStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
-import java.net.URI
-import java.time.Duration
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 class GeminiProvider(
-    private val secureStorage: SecureStorage,
-    private val json: Json = Json { ignoreUnknownKeys = true }
+    private val secureStorage: SecureStorage = SecureStorage(com.example.EdgeTraderApp.instance)
 ) : AiProvider {
 
-    private val httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(30))
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    private val helper = NvidiaLlmProvider(secureStorage)
 
     override val config: AiProviderConfig
         get() = AiProviderConfig(
@@ -41,17 +42,17 @@ class GeminiProvider(
                     return@withContext Result.failure(IllegalStateException("Gemini API key not configured"))
                 }
 
-                val prompt = buildAnalysisPrompt(request)
+                val prompt = helper.buildAnalysisPrompt(request)
                 val chatRequest = AiChatRequest(
                     messages = listOf(
-                        AiChatMessage("user", "${getSystemPrompt()}\n\n$prompt")
+                        AiChatMessage("user", "${helper.getSystemPrompt()}\n\n$prompt")
                     ),
                     temperature = config.temperature,
                     maxTokens = config.maxTokens
                 )
 
                 val chatResponse = chat(chatRequest).getOrThrow()
-                parseAnalysisResponse(chatResponse.content, request)
+                helper.parseAnalysisResponse(chatResponse.content, request)
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -61,46 +62,56 @@ class GeminiProvider(
     override suspend fun chat(request: AiChatRequest): Result<AiChatResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                val contents = request.messages.map { msg ->
-                    GeminiContent(
-                        role = if (msg.role == "user") "user" else "model",
-                        parts = listOf(GeminiPart(msg.content))
-                    )
+                val contentsArray = JSONArray()
+                request.messages.forEach { msg ->
+                    val contentObj = JSONObject()
+                    contentObj.put("role", if (msg.role == "user") "user" else "model")
+                    val partsArray = JSONArray()
+                    partsArray.put(JSONObject().put("text", msg.content))
+                    contentObj.put("parts", partsArray)
+                    contentsArray.put(contentObj)
                 }
 
-                val requestBody = json.encodeToString(
-                    GeminiRequest(
-                        contents = contents,
-                        generationConfig = GeminiGenerationConfig(
-                            temperature = request.temperature,
-                            maxOutputTokens = request.maxTokens,
-                            topP = 0.95,
-                            topK = 40
-                        )
-                    )
-                )
+                val genConfig = JSONObject().apply {
+                    put("temperature", request.temperature)
+                    put("maxOutputTokens", request.maxTokens)
+                    put("topP", 0.95)
+                    put("topK", 40)
+                }
 
-                val httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create("${config.apiEndpoint}?key=${config.apiKey}"))
-                    .timeout(Duration.ofSeconds(config.timeoutSeconds.toLong()))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                val rootObj = JSONObject().apply {
+                    put("contents", contentsArray)
+                    put("generationConfig", genConfig)
+                }
+
+                val requestBody = rootObj.toString().toRequestBody("application/json".toMediaType())
+                val url = "${config.apiEndpoint}?key=${config.apiKey}"
+                val httpRequest = Request.Builder()
+                    .url(url)
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
                     .build()
 
-                val response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString())
+                val response = httpClient.newCall(httpRequest).execute()
+                val responseBodyStr = response.body?.string() ?: ""
 
-                if (response.statusCode() != 200) {
+                if (!response.isSuccessful) {
                     return@withContext Result.failure(
-                        RuntimeException("Gemini API error: ${response.statusCode()} - ${response.body()}")
+                        RuntimeException("Gemini API error: ${response.code} - $responseBodyStr")
                     )
                 }
 
-                val geminiResponse = json.decodeFromString<GeminiResponse>(response.body())
-                val content = geminiResponse.candidates.firstOrNull()?.content?.parts.firstOrNull()?.text ?: ""
-                val tokensUsed = geminiResponse.usageMetadata?.totalTokenCount ?: 0
+                val respObj = JSONObject(responseBodyStr)
+                val candidates = respObj.optJSONArray("candidates")
+                val firstCandidate = candidates?.optJSONObject(0)
+                val contentObj = firstCandidate?.optJSONObject("content")
+                val parts = contentObj?.optJSONArray("parts")
+                val text = parts?.optJSONObject(0)?.optString("text", "") ?: ""
+                val usageMetadata = respObj.optJSONObject("usageMetadata")
+                val tokensUsed = usageMetadata?.optInt("totalTokenCount", 0) ?: 0
 
                 Result.success(AiChatResponse(
-                    content = content,
+                    content = text,
                     provider = config.name,
                     tokensUsed = tokensUsed
                 ))
@@ -130,56 +141,4 @@ class GeminiProvider(
             }
         }
     }
-
-    private fun getSystemPrompt(): String = NvidiaLlmProvider().getSystemPrompt()
-
-    private fun buildAnalysisPrompt(request: AiAnalysisRequest): String = NvidiaLlmProvider().buildAnalysisPrompt(request)
-
-    private fun parseAnalysisResponse(content: String, request: AiAnalysisRequest): Result<AiAnalysisResponse> {
-        return NvidiaLlmProvider().parseAnalysisResponse(content, request)
-    }
-
-    @Serializable
-    private data class GeminiRequest(
-        val contents: List<GeminiContent>,
-        val generationConfig: GeminiGenerationConfig
-    )
-
-    @Serializable
-    private data class GeminiContent(
-        val role: String,
-        val parts: List<GeminiPart>
-    )
-
-    @Serializable
-    private data class GeminiPart(
-        val text: String
-    )
-
-    @Serializable
-    private data class GeminiGenerationConfig(
-        val temperature: Double,
-        val maxOutputTokens: Int,
-        val topP: Double,
-        val topK: Int
-    )
-
-    @Serializable
-    private data class GeminiResponse(
-        val candidates: List<GeminiCandidate>,
-        val usageMetadata: GeminiUsageMetadata?
-    )
-
-    @Serializable
-    private data class GeminiCandidate(
-        val content: GeminiContent?,
-        val finishReason: String?
-    )
-
-    @Serializable
-    private data class GeminiUsageMetadata(
-        val promptTokenCount: Int,
-        val candidatesTokenCount: Int,
-        val totalTokenCount: Int
-    )
 }

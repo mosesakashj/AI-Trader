@@ -21,6 +21,9 @@ enum class TradeStatus {
 enum class CloseReason {
     TAKE_PROFIT,
     STOP_LOSS,
+    BREAK_EVEN,
+    TRAILING_STOP,
+    TREND_REVERSAL,
     MANUAL,
     EMERGENCY_STOP,
     SAFE_MODE,

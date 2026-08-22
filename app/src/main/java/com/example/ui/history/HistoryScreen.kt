@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.EdgeTraderApp
+import com.example.domain.model.CloseReason
 import com.example.domain.model.TradeDirection
 import com.example.domain.model.TradeStatus
 import com.example.ui.components.MetricCard
@@ -334,8 +335,19 @@ fun HistoryScreen() {
                                 Text(formatTradeDuration(durationMillis), style = MaterialTheme.typography.bodySmall, color = TextPrimary, fontFamily = FontFamily.Monospace)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("Reason", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text(trade.closeReason?.name ?: "MANUAL", style = MaterialTheme.typography.bodySmall, color = if (isWin) EmeraldGain else CrimsonLoss)
+                                Text("Close Type", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                val (reasonText, reasonColor) = when (trade.closeReason) {
+                                    CloseReason.TAKE_PROFIT -> "🎯 Take Profit" to EmeraldGain
+                                    CloseReason.BREAK_EVEN -> "🛡️ Break-Even" to CyanLight
+                                    CloseReason.TRAILING_STOP -> "⚡ Trailing Stop" to CyanLight
+                                    CloseReason.TREND_REVERSAL -> "🔄 Trend Reversal Exit" to GoldHero
+                                    CloseReason.STOP_LOSS -> "🛑 Stop Loss" to CrimsonLoss
+                                    CloseReason.EMERGENCY_STOP -> "🚨 Emergency Stop" to CrimsonLoss
+                                    CloseReason.SAFE_MODE -> "🛡️ Safe Mode" to GoldHero
+                                    CloseReason.EXPIRED -> "⌛ Expired" to TextMuted
+                                    else -> (trade.closeReason?.name ?: "MANUAL") to (if (isWin) EmeraldGain else CrimsonLoss)
+                                }
+                                Text(reasonText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = reasonColor)
                             }
                         }
                         Text(

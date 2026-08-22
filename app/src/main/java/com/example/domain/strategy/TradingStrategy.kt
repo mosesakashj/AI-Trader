@@ -1,4 +1,4 @@
-﻿package com.example.domain.strategy
+package com.example.domain.strategy
 
 import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.indicators.IndicatorValues
@@ -9,7 +9,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 class TradingStrategy(
-    private val strategyConfig: StrategyConfig = StrategyConfig(),
+    val strategyConfig: StrategyConfig = StrategyConfig(),
     private val newsFilter: NewsFilter = NoNewsFilter()
 ) {
 
@@ -777,6 +777,79 @@ class TradingStrategy(
 
         return null
     }
+
+    data class EarlyExitDecision(
+        val shouldExit: Boolean,
+        val reason: String
+    )
+
+    fun checkTrendReversalExit(
+        position: Position,
+        currentQuote: Quote,
+        candles: List<Candle>,
+        symbolConfig: SymbolConfig
+    ): EarlyExitDecision {
+        if (!strategyConfig.earlyExitOnTrendReversal) {
+            return EarlyExitDecision(false, "")
+        }
+        val closedCandles = candles.filter { it.isClosed }
+        if (closedCandles.size < 20) return EarlyExitDecision(false, "")
+
+        val lastCandle = closedCandles.last()
+        val prevCandle = closedCandles[closedCandles.size - 2]
+        val indicators = IndicatorCalculator.computeLatest(
+            candles = closedCandles,
+            fastEmaPeriod = strategyConfig.emaFastPeriod,
+            slowEmaPeriod = strategyConfig.emaSlowPeriod,
+            adxPeriod = strategyConfig.adxPeriod,
+            atrPeriod = strategyConfig.atrPeriod,
+            rsiPeriod = strategyConfig.rsiPeriod
+        ) ?: return EarlyExitDecision(false, "")
+
+        val emaFast = indicators.emaFast
+        val emaSlow = indicators.emaSlow
+        val rsi = indicators.rsi
+        val atr = indicators.atr
+
+        val markPrice = if (position.direction == TradeDirection.BUY) currentQuote.bid else currentQuote.ask
+        val priceDiff = if (position.direction == TradeDirection.BUY) markPrice - position.entryPrice else position.entryPrice - markPrice
+        val riskDist = abs(position.entryPrice - position.stopLoss)
+        val unrealizedR = if (riskDist > 0) priceDiff / riskDist else 0.0
+
+        if (position.direction == TradeDirection.BUY) {
+            val emaFlippedBearish = emaFast < emaSlow && lastCandle.close < emaFast
+            val bearishEngulfing = lastCandle.close < prevCandle.low && lastCandle.open > prevCandle.close && lastCandle.close < emaFast
+            val rsiExhaustion = rsi < 45.0 && prevCandle.close > lastCandle.close && (lastCandle.open - lastCandle.close) > atr * 0.75
+
+            if (emaFlippedBearish) {
+                return EarlyExitDecision(true, "Trend Reversal: EMA Fast (${SymbolCatalog.formatPrice(position.symbol, emaFast)}) crossed below EMA Slow. Protecting at ${unrealizedR.formatR()}R.")
+            }
+            if (unrealizedR > 0.3 && bearishEngulfing) {
+                return EarlyExitDecision(true, "Bearish Engulfing candle formed against Long. Protecting gains at ${unrealizedR.formatR()}R.")
+            }
+            if (unrealizedR > 0.5 && rsiExhaustion) {
+                return EarlyExitDecision(true, "Momentum Exhaustion: Sharp RSI drop against Long position.")
+            }
+        } else {
+            val emaFlippedBullish = emaFast > emaSlow && lastCandle.close > emaFast
+            val bullishEngulfing = lastCandle.close > prevCandle.high && lastCandle.open < prevCandle.close && lastCandle.close > emaFast
+            val rsiBounce = rsi > 55.0 && lastCandle.close > prevCandle.close && (lastCandle.close - lastCandle.open) > atr * 0.75
+
+            if (emaFlippedBullish) {
+                return EarlyExitDecision(true, "Trend Reversal: EMA Fast (${SymbolCatalog.formatPrice(position.symbol, emaFast)}) crossed above EMA Slow. Protecting at ${unrealizedR.formatR()}R.")
+            }
+            if (unrealizedR > 0.3 && bullishEngulfing) {
+                return EarlyExitDecision(true, "Bullish Engulfing candle formed against Short. Protecting gains at ${unrealizedR.formatR()}R.")
+            }
+            if (unrealizedR > 0.5 && rsiBounce) {
+                return EarlyExitDecision(true, "Momentum Exhaustion: Sharp RSI bounce against Short position.")
+            }
+        }
+
+        return EarlyExitDecision(false, "")
+    }
+
+    private fun Double.formatR(): String = "%.2f".format(Locale.US, this)
 
     private fun isSessionAllowed(openTime: Long): Boolean {
         val calendar = Calendar.getInstance(TimeZone.getTimeZone(strategyConfig.timezone))
