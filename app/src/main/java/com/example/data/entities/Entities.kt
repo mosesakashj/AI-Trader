@@ -3,6 +3,7 @@ package com.example.data.entities
 import com.example.domain.model.*
 
 data class BotConfigEntity(
+    val id: String = "primary_config",
     val mode: String = TradingMode.PAPER.name,
     val isBotEnabled: Boolean = false,
     val emergencyStop: Boolean = false,
