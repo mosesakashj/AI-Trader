@@ -27,7 +27,8 @@ object MarketScheduleUtils {
      * - Open 24/7/365
      */
     fun getMarketSession(symbol: String, currentTimeMillis: Long = System.currentTimeMillis()): MarketSessionInfo {
-        if (symbol == "BTCUSD" || symbol == "ETHUSD") {
+        val isCrypto = symbol in listOf("BTCUSD", "ETHUSD", "SOLUSD")
+        if (isCrypto) {
             return MarketSessionInfo(
                 symbol = symbol,
                 isOpen = true,

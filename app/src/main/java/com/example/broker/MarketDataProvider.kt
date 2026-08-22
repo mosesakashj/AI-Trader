@@ -2,6 +2,7 @@ package com.example.broker
 
 import com.example.domain.model.Candle
 import com.example.domain.model.Quote
+import com.example.domain.model.SymbolCatalog
 import com.example.domain.model.Timeframe
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -21,13 +22,13 @@ interface MarketDataProvider {
 class PaperMarketDataProvider : MarketDataProvider {
 
     private val subscribedSymbols = ConcurrentHashMap.newKeySet<String>().apply {
-        add("XAUUSD")
-        add("BTCUSD")
+        SymbolCatalog.ALL_SYMBOLS.forEach { add(it.symbol) }
     }
 
     private val currentPrices = ConcurrentHashMap<String, Double>().apply {
-        put("XAUUSD", 2650.50)
-        put("BTCUSD", 91250.00)
+        SymbolCatalog.ALL_SYMBOLS.forEach { sym ->
+            put(sym.symbol, SymbolCatalog.getInitialQuote(sym.symbol).ask)
+        }
     }
 
     override suspend fun subscribe(symbol: String) {
@@ -44,13 +45,24 @@ class PaperMarketDataProvider : MarketDataProvider {
             step++
             subscribedSymbols.forEach { symbol ->
                 val basePrice = currentPrices[symbol] ?: 100.0
-                val volatility = if (symbol == "XAUUSD") 0.45 else 18.0
-                val spread = if (symbol == "XAUUSD") 0.25 else 4.5
+                val symConfig = SymbolCatalog.get(symbol)
+                val spread = symConfig.spreadLimit * 0.5
+                val volatility = when (symbol) {
+                    "BTCUSD" -> 18.0
+                    "ETHUSD" -> 1.5
+                    "SOLUSD" -> 0.15
+                    "XAUUSD" -> 0.45
+                    "USOIL" -> 0.08
+                    "USDJPY" -> 0.04
+                    "EURUSD" -> 0.00015
+                    "GBPUSD" -> 0.00020
+                    else -> 0.1
+                }
 
                 // Geometric random walk with slight sine drift for realistic trend cycles
                 val drift = sin(step * 0.05) * (volatility * 0.4)
                 val noise = (Random.nextDouble() - 0.48) * volatility
-                val newMid = (basePrice + drift + noise).coerceAtLeast(10.0)
+                val newMid = (basePrice + drift + noise).coerceAtLeast(symConfig.tickSize * 2)
                 currentPrices[symbol] = newMid
 
                 val bid = newMid - (spread / 2.0)
@@ -67,9 +79,20 @@ class PaperMarketDataProvider : MarketDataProvider {
         timeframe: Timeframe,
         count: Int
     ): List<Candle> {
+        val symConfig = SymbolCatalog.get(symbol)
         val candles = mutableListOf<Candle>()
-        var price = if (symbol == "XAUUSD") 2620.0 else 89500.0
-        val volatility = if (symbol == "XAUUSD") 1.8 else 85.0
+        var price = currentPrices[symbol] ?: SymbolCatalog.getInitialQuote(symbol).ask
+        val volatility = when (symbol) {
+            "BTCUSD" -> 85.0
+            "ETHUSD" -> 6.5
+            "SOLUSD" -> 0.8
+            "XAUUSD" -> 1.8
+            "USOIL" -> 0.35
+            "USDJPY" -> 0.15
+            "EURUSD" -> 0.0006
+            "GBPUSD" -> 0.0008
+            else -> 0.5
+        }
         val intervalMillis = timeframe.minutes * 60 * 1000L
         val now = System.currentTimeMillis()
         val startTime = now - (count * intervalMillis)
@@ -80,8 +103,8 @@ class PaperMarketDataProvider : MarketDataProvider {
             // Drift + trend components
             val change = (Random.nextDouble() - 0.48) * volatility * 2.0
             val close = open + change
-            val high = maxOf(open, close) + Random.nextDouble(0.1, volatility)
-            val low = minOf(open, close) - Random.nextDouble(0.1, volatility)
+            val high = maxOf(open, close) + Random.nextDouble(symConfig.tickSize, volatility)
+            val low = minOf(open, close) - Random.nextDouble(symConfig.tickSize, volatility)
             val volume = Random.nextDouble(50.0, 500.0)
 
             candles.add(

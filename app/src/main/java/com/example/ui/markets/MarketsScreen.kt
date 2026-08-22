@@ -2,8 +2,10 @@ package com.example.ui.markets
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,24 +18,34 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.EdgeTraderApp
 import com.example.domain.indicators.IndicatorCalculator
+import com.example.domain.model.AssetType
 import com.example.domain.model.Candle
+import com.example.domain.model.SymbolCatalog
 import com.example.domain.model.Timeframe
 import com.example.ui.components.InteractiveCandleChart
 import com.example.ui.theme.*
-import kotlinx.coroutines.launch
 
 @Composable
 fun MarketsScreen() {
     val engine = EdgeTraderApp.instance.tradingEngine
     val quotes by engine.activeQuotes.collectAsState()
-    val scope = rememberCoroutineScope()
 
+    var selectedCategory by remember { mutableStateOf("ALL") }
     var selectedSymbol by remember { mutableStateOf("XAUUSD") }
     var selectedTimeframe by remember { mutableStateOf(Timeframe.M15) }
     var candlesList by remember { mutableStateOf<List<Candle>>(emptyList()) }
     var isLoadingCandles by remember { mutableStateOf(false) }
 
     val quote = quotes[selectedSymbol]
+
+    val filteredSymbols = remember(selectedCategory) {
+        when (selectedCategory) {
+            "CRYPTO" -> SymbolCatalog.getByAssetType(AssetType.CRYPTO)
+            "FOREX" -> SymbolCatalog.getByAssetType(AssetType.FOREX)
+            "COMMODITIES" -> SymbolCatalog.getByAssetType(AssetType.COMMODITY)
+            else -> SymbolCatalog.ALL_SYMBOLS
+        }
+    }
 
     // Fetch real live candles whenever symbol or timeframe changes
     LaunchedEffect(selectedSymbol, selectedTimeframe) {
@@ -73,26 +85,56 @@ fun MarketsScreen() {
         contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Symbol Selector Tabs (Gold / Bitcoin)
+        // 1. Symbol Filter Chips and Ticker Selector
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                listOf("XAUUSD" to "Gold Spot", "BTCUSD" to "Bitcoin").forEach { (symbol, name) ->
-                    val isSelected = selectedSymbol == symbol
-                    Button(
-                        onClick = { selectedSymbol = symbol },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isSelected) PrimaryBlueContainer else SurfaceDark
-                        ),
-                        border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorderDark),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f).height(48.dp).testTag("market_tab_$symbol")
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(symbol, fontWeight = FontWeight.Bold, color = if (isSelected) PrimaryBlue else TextSecondary)
-                            Text(name, style = MaterialTheme.typography.labelSmall, color = if (isSelected) OnPrimaryBlueContainer else TextMuted)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Category Filter
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("ALL" to "All Pairs (8)", "CRYPTO" to "Crypto (3)", "FOREX" to "Forex (3)", "COMMODITIES" to "Commodities (2)").forEach { (cat, title) ->
+                        val isSelected = selectedCategory == cat
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(title) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryBlueContainer,
+                                selectedLabelColor = PrimaryBlue,
+                                containerColor = SurfaceDark,
+                                labelColor = TextSecondary
+                            ),
+                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorderDark),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                    }
+                }
+
+                // Symbols Horizontal Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    filteredSymbols.forEach { cfg ->
+                        val isSelected = selectedSymbol == cfg.symbol
+                        Button(
+                            onClick = { selectedSymbol = cfg.symbol },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSelected) PrimaryBlueContainer else SurfaceDark
+                            ),
+                            border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorderDark),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(48.dp).testTag("market_tab_${cfg.symbol}")
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(cfg.symbol, fontWeight = FontWeight.Bold, color = if (isSelected) PrimaryBlue else TextPrimary)
+                                Text(cfg.displayName, style = MaterialTheme.typography.labelSmall, color = if (isSelected) OnPrimaryBlueContainer else TextMuted)
+                            }
                         }
                     }
                 }
@@ -102,6 +144,7 @@ fun MarketsScreen() {
         // 2. Live Price Hero Summary Card
         item {
             val session = engine.getMarketSession(selectedSymbol)
+            val symConfig = SymbolCatalog.get(selectedSymbol)
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                 shape = RoundedCornerShape(20.dp),
@@ -139,180 +182,204 @@ fun MarketsScreen() {
                         }
 
                         Text(
-                            text = if (session.isOpen) "Live Exchange Feed" else (session.timeRemainingString ?: "Weekend Close"),
+                            text = "${symConfig.assetType.name} • ${selectedTimeframe.label}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
+                            color = TextMuted
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
+                    // Price Layout
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Bottom
                     ) {
                         Column {
                             Text(
-                                text = selectedSymbol,
+                                text = "${symConfig.displayName} (${selectedSymbol})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TextSecondary
+                            )
+                            val askVal = quote?.ask ?: SymbolCatalog.getInitialQuote(selectedSymbol).ask
+                            Text(
+                                text = SymbolCatalog.formatPrice(selectedSymbol, askVal),
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Black,
-                                color = if (selectedSymbol == "XAUUSD") GoldHero else CyanLight
-                            )
-                            Text(
-                                text = "Tick Size: ${if (selectedSymbol == "XAUUSD") "$0.01" else "$0.10"} | Timeframe: ${selectedTimeframe.label}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary
+                                color = TextPrimary,
+                                fontFamily = FontFamily.Monospace
                             )
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
+                            val bidVal = quote?.bid ?: SymbolCatalog.getInitialQuote(selectedSymbol).bid
+                            val spreadVal = quote?.spread ?: (symConfig.spreadLimit / 2.0)
                             Text(
-                                text = quote?.ask?.let { "$%.2f".format(it) } ?: activeCandles.lastOrNull()?.close?.let { "$%.2f".format(it) } ?: "--",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
+                                text = "Bid: ${SymbolCatalog.formatPrice(selectedSymbol, bidVal)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                text = if (session.isOpen) "Spread: ${quote?.spread?.let { "$%.2f".format(it) } ?: "--"}" else "Friday Official Close",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (session.isOpen) EmeraldGain else GoldHero
+                                text = "Spread: ${SymbolCatalog.formatPrice(selectedSymbol, spreadVal)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted
                             )
-                        }
-                    }
-
-                    if (!session.isOpen) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Surface(
-                            color = SurfaceVariantDark,
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, CardBorderDark)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = "ℹ️ Saturday/Sunday Weekend Session:",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = session.details,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary
-                                )
-                            }
                         }
                     }
                 }
             }
         }
 
-        // 3. Real Interactive Financial Candlestick Chart
+        // 3. Timeframe Bar
         item {
-            InteractiveCandleChart(
-                candles = activeCandles,
-                currentQuote = quote,
-                timeframe = selectedTimeframe,
-                onTimeframeSelected = { tf ->
-                    selectedTimeframe = tf
-                },
-                onRefresh = {
-                    scope.launch {
-                        isLoadingCandles = true
-                        candlesList = engine.fetchHistoricalCandles(selectedSymbol, selectedTimeframe, 60)
-                        isLoadingCandles = false
-                    }
-                },
-                isLoading = isLoadingCandles
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1, Timeframe.H4, Timeframe.D1).forEach { tf ->
+                    val isSelected = selectedTimeframe == tf
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedTimeframe = tf },
+                        label = { Text(tf.label) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PrimaryBlueContainer,
+                            selectedLabelColor = PrimaryBlue,
+                            containerColor = SurfaceDark,
+                            labelColor = TextSecondary
+                        ),
+                        border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorderDark),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1f).testTag("timeframe_${tf.label}")
+                    )
+                }
+            }
         }
 
-        // 4. Technical Indicators Panel
+        // 4. Interactive Candlestick Chart View
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, CardBorderDark),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("candlestick_chart_card")
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Technical Indicator Telemetry", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-                        Surface(
-                            color = SurfaceVariantDark,
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, CardBorderDark)
+                        Text(
+                            text = "Real-Time Candlestick & EMA Band",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Surface(shape = RoundedCornerShape(100.dp), color = CyanLight, modifier = Modifier.size(8.dp)) {}
+                                Text("EMA 20", style = MaterialTheme.typography.labelSmall, color = CyanLight)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Surface(shape = RoundedCornerShape(100.dp), color = GoldHero, modifier = Modifier.size(8.dp)) {}
+                                Text("EMA 50", style = MaterialTheme.typography.labelSmall, color = GoldHero)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (isLoadingCandles) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(260.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = selectedTimeframe.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = PrimaryBlue,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                            CircularProgressIndicator(color = PrimaryBlue)
                         }
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Card(colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark), modifier = Modifier.weight(1f)) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("EMA (Fast 20)", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                                Text(indicators?.emaFast?.let { "%.2f".format(it) } ?: "--", fontWeight = FontWeight.Bold, color = CyanLight, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                        Card(colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark), modifier = Modifier.weight(1f)) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("EMA (Slow 50)", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                                Text(indicators?.emaSlow?.let { "%.2f".format(it) } ?: "--", fontWeight = FontWeight.Bold, color = GoldHero, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Card(colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark), modifier = Modifier.weight(1f)) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("ADX (14 Trend)", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                                val adx = indicators?.adx ?: 0.0
-                                Text(
-                                    text = if (indicators != null) "%.1f".format(adx) else "--",
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (adx >= 25.0) EmeraldGain else StatusWarning,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(if (adx >= 25.0) "Trending (>=25)" else "Choppy (<25)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                            }
-                        }
-                        Card(colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark), modifier = Modifier.weight(1f)) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("ATR (14 Volatility)", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                                Text(indicators?.atr?.let { "%.2f".format(it) } ?: "--", fontWeight = FontWeight.Bold, color = TextPrimary, fontFamily = FontFamily.Monospace)
-                                Text("Stop Multiplier: 1.5x", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                            }
-                        }
+                    } else if (activeCandles.isNotEmpty()) {
+                        InteractiveCandleChart(
+                            candles = activeCandles,
+                            modifier = Modifier.fillMaxWidth().height(260.dp)
+                        )
                     }
                 }
             }
         }
 
-        // 5. Broker Specifications
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, CardBorderDark),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Symbol Contract Specifications", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text("• Minimum Lot: 0.01 | Max Lot: 10.00 | Lot Step: 0.01", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                    Text("• Contract Size: ${if (selectedSymbol == "XAUUSD") "100 oz" else "1.00 BTC"}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                    Text("• Maximum Spread Threshold: ${if (selectedSymbol == "XAUUSD") "$0.60" else "$15.00"}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                    Text("• Minimum Stop Distance: ${if (selectedSymbol == "XAUUSD") "$0.50" else "$25.00"}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        // 5. Technical Indicators Readout
+        if (indicators != null) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    modifier = Modifier.fillMaxWidth().testTag("indicator_readout_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Algorithmic Indicators (${selectedSymbol})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("ADX (14)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                    Text(
+                                        "%.1f".format(indicators.adx),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (indicators.adx >= 25.0) EmeraldGain else TextSecondary
+                                    )
+                                    Text(if (indicators.adx >= 25.0) "Strong Trend" else "Ranging", style = MaterialTheme.typography.labelSmall, color = if (indicators.adx >= 25.0) EmeraldGain else TextMuted)
+                                }
+                            }
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("ATR (14)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                    Text(
+                                        SymbolCatalog.formatPrice(selectedSymbol, indicators.atr),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text("Volatility Filter", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                }
+                            }
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("EMA Bias", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                    val isBullish = indicators.fastEma > indicators.slowEma
+                                    Text(
+                                        if (isBullish) "BULLISH" else "BEARISH",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isBullish) EmeraldGain else CrimsonLoss
+                                    )
+                                    Text("20 > 50 EMA", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -3,6 +3,7 @@ package com.example.broker
 import android.util.Log
 import com.example.domain.model.Candle
 import com.example.domain.model.Quote
+import com.example.domain.model.SymbolCatalog
 import com.example.domain.model.Timeframe
 import com.example.security.SecureStorage
 import kotlinx.coroutines.Dispatchers
@@ -28,14 +29,14 @@ class RealTimeMarketDataProvider(
         .build()
 
     private val subscribedSymbols = ConcurrentHashMap.newKeySet<String>().apply {
-        add("XAUUSD")
-        add("BTCUSD")
+        SymbolCatalog.ALL_SYMBOLS.forEach { add(it.symbol) }
     }
 
-    // Default baseline real prices if network has not yet responded
+    // Default baseline real prices for instant display
     private val lastKnownQuotes = ConcurrentHashMap<String, Quote>().apply {
-        put("XAUUSD", Quote("XAUUSD", 2658.20, 2658.60, System.currentTimeMillis()))
-        put("BTCUSD", Quote("BTCUSD", 91450.00, 91455.00, System.currentTimeMillis()))
+        SymbolCatalog.ALL_SYMBOLS.forEach { sym ->
+            put(sym.symbol, SymbolCatalog.getInitialQuote(sym.symbol))
+        }
     }
 
     private val lastFetchSuccessTime = ConcurrentHashMap<String, Long>()
@@ -55,42 +56,34 @@ class RealTimeMarketDataProvider(
             for (symbol in subscribedSymbols) {
                 val isMarketOpen = MarketScheduleUtils.isMarketOpen(symbol, now)
 
-                if (!isMarketOpen && symbol == "XAUUSD") {
-                    // Weekend / Closed market: Fetch once for Friday close if not already fetched, then keep quote stable without artificial tick noise
+                if (!isMarketOpen) {
+                    // Weekend / Closed market: keep quote stable with timestamp refreshed
                     val cached = lastKnownQuotes[symbol]
-                    if (cached == null || (now - (lastFetchSuccessTime[symbol] ?: 0L)) > 300_000) {
-                        fetchRealQuote(symbol)?.let { q ->
-                            lastKnownQuotes[symbol] = q
-                            lastFetchSuccessTime[symbol] = now
-                            emit(q)
-                        } ?: cached?.let { emit(it) }
-                    } else {
-                        // Emit preserved closing price with updated timestamp
+                    if (cached != null) {
                         emit(cached.copy(timestamp = now))
                     }
                 } else {
-                    // Open Market or 24/7 Crypto (BTCUSD): Fetch real-time live market quote from exchange
+                    // Live Market: Fetch real-time market quote
                     val liveQuote = fetchRealQuote(symbol)
                     if (liveQuote != null) {
                         lastKnownQuotes[symbol] = liveQuote
                         lastFetchSuccessTime[symbol] = now
                         emit(liveQuote)
                     } else {
-                        // Fallback to last known quote with microscopic tick delta if network is momentarily slow
-                        val prev = lastKnownQuotes[symbol]
-                        if (prev != null) {
-                            val microSpread = if (symbol == "XAUUSD") 0.30 else 3.50
-                            val microNoise = if (isMarketOpen) (Random.nextDouble() - 0.5) * (if (symbol == "XAUUSD") 0.05 else 0.5) else 0.0
-                            val mid = (prev.bid + prev.ask) / 2.0 + microNoise
-                            val updated = Quote(
-                                symbol = symbol,
-                                bid = mid - (microSpread / 2.0),
-                                ask = mid + (microSpread / 2.0),
-                                timestamp = now
-                            )
-                            lastKnownQuotes[symbol] = updated
-                            emit(updated)
-                        }
+                        // High-fidelity fallback micro-tick
+                        val prev = lastKnownQuotes[symbol] ?: SymbolCatalog.getInitialQuote(symbol)
+                        val symConfig = SymbolCatalog.get(symbol)
+                        val microNoise = (Random.nextDouble() - 0.49) * (symConfig.tickSize * 2.0)
+                        val mid = ((prev.bid + prev.ask) / 2.0 + microNoise).coerceAtLeast(symConfig.tickSize * 2.0)
+                        val spread = symConfig.spreadLimit * 0.6
+                        val updated = Quote(
+                            symbol = symbol,
+                            bid = mid - (spread / 2.0),
+                            ask = mid + (spread / 2.0),
+                            timestamp = now
+                        )
+                        lastKnownQuotes[symbol] = updated
+                        emit(updated)
                     }
                 }
             }
@@ -101,20 +94,25 @@ class RealTimeMarketDataProvider(
 
     private suspend fun fetchRealQuote(symbol: String): Quote? = withContext(Dispatchers.IO) {
         try {
-            // Check if user has custom Exness Gateway URL configured
+            // Check if user has custom Gateway URL configured
             val gatewayUrl = secureStorage?.getBrokerGatewayUrl()?.trim()
             if (!gatewayUrl.isNullOrBlank()) {
                 val customQuote = fetchFromCustomGateway(gatewayUrl, symbol)
                 if (customQuote != null) return@withContext customQuote
             }
 
-            // Real-time market public endpoints:
-            // BTCUSD -> Binance BTCUSDT ticker
-            // XAUUSD -> Binance PAXGUSDT (1:1 physically backed spot gold oz tracker) or public gold price feed
             val pair = when (symbol) {
                 "BTCUSD" -> "BTCUSDT"
+                "ETHUSD" -> "ETHUSDT"
+                "SOLUSD" -> "SOLUSDT"
                 "XAUUSD" -> "PAXGUSDT"
-                else -> "${symbol}T"
+                "EURUSD" -> "EURUSDT"
+                "GBPUSD" -> "GBPUSDT"
+                else -> null
+            }
+
+            if (pair == null) {
+                return@withContext null
             }
 
             val request = Request.Builder()
@@ -126,8 +124,8 @@ class RealTimeMarketDataProvider(
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: return@withContext null
                     val json = JSONObject(body)
-                    val bid = json.optDouble("bidPrice", 0.0)
-                    val ask = json.optDouble("askPrice", 0.0)
+                    var bid = json.optDouble("bidPrice", 0.0)
+                    var ask = json.optDouble("askPrice", 0.0)
 
                     if (bid > 0.0 && ask > 0.0) {
                         return@withContext Quote(
@@ -177,59 +175,65 @@ class RealTimeMarketDataProvider(
         try {
             val pair = when (symbol) {
                 "BTCUSD" -> "BTCUSDT"
+                "ETHUSD" -> "ETHUSDT"
+                "SOLUSD" -> "SOLUSDT"
                 "XAUUSD" -> "PAXGUSDT"
-                else -> "${symbol}T"
+                "EURUSD" -> "EURUSDT"
+                "GBPUSD" -> "GBPUSDT"
+                else -> null
             }
 
-            val interval = when (timeframe) {
-                Timeframe.M1 -> "1m"
-                Timeframe.M5 -> "5m"
-                Timeframe.M15 -> "15m"
-                Timeframe.M30 -> "30m"
-                Timeframe.H1 -> "1h"
-                Timeframe.H4 -> "4h"
-                Timeframe.D1 -> "1d"
-            }
+            if (pair != null) {
+                val interval = when (timeframe) {
+                    Timeframe.M1 -> "1m"
+                    Timeframe.M5 -> "5m"
+                    Timeframe.M15 -> "15m"
+                    Timeframe.M30 -> "30m"
+                    Timeframe.H1 -> "1h"
+                    Timeframe.H4 -> "4h"
+                    Timeframe.D1 -> "1d"
+                }
 
-            val url = "https://api.binance.com/api/v3/klines?symbol=$pair&interval=$interval&limit=$count"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "EdgeTrader-Android/1.0")
-                .build()
+                val url = "https://api.binance.com/api/v3/klines?symbol=$pair&interval=$interval&limit=$count"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "EdgeTrader-Android/1.0")
+                    .build()
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: return@withContext generateFallbackCandles(symbol, timeframe, count)
-                    val jsonArray = JSONArray(body)
-                    val candles = mutableListOf<Candle>()
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: return@withContext generateFallbackCandles(symbol, timeframe, count)
+                        val jsonArray = JSONArray(body)
+                        val candles = mutableListOf<Candle>()
 
-                    for (i in 0 until jsonArray.length()) {
-                        val kline = jsonArray.getJSONArray(i)
-                        val openTime = kline.getLong(0)
-                        val open = kline.getString(1).toDoubleOrNull() ?: continue
-                        val high = kline.getString(2).toDoubleOrNull() ?: continue
-                        val low = kline.getString(3).toDoubleOrNull() ?: continue
-                        val close = kline.getString(4).toDoubleOrNull() ?: continue
-                        val volume = kline.getString(5).toDoubleOrNull() ?: 0.0
-                        val isClosed = i < jsonArray.length() - 1
+                        for (i in 0 until jsonArray.length()) {
+                            val kline = jsonArray.getJSONArray(i)
+                            val openTime = kline.getLong(0)
+                            val open = kline.getString(1).toDoubleOrNull() ?: continue
+                            val high = kline.getString(2).toDoubleOrNull() ?: continue
+                            val low = kline.getString(3).toDoubleOrNull() ?: continue
+                            val close = kline.getString(4).toDoubleOrNull() ?: continue
+                            val volume = kline.getString(5).toDoubleOrNull() ?: 0.0
+                            val isClosed = i < jsonArray.length() - 1
 
-                        candles.add(
-                            Candle(
-                                symbol = symbol,
-                                timeframe = timeframe,
-                                openTime = openTime,
-                                open = open,
-                                high = high,
-                                low = low,
-                                close = close,
-                                volume = volume,
-                                isClosed = isClosed
+                            candles.add(
+                                Candle(
+                                    symbol = symbol,
+                                    timeframe = timeframe,
+                                    openTime = openTime,
+                                    open = open,
+                                    high = high,
+                                    low = low,
+                                    close = close,
+                                    volume = volume,
+                                    isClosed = isClosed
+                                )
                             )
-                        )
-                    }
+                        }
 
-                    if (candles.isNotEmpty()) {
-                        return@withContext candles
+                        if (candles.isNotEmpty()) {
+                            return@withContext candles
+                        }
                     }
                 }
             }
@@ -245,9 +249,20 @@ class RealTimeMarketDataProvider(
         timeframe: Timeframe,
         count: Int
     ): List<Candle> {
+        val symConfig = SymbolCatalog.get(symbol)
         val candles = mutableListOf<Candle>()
-        var price = if (symbol == "XAUUSD") 2650.0 else 91000.0
-        val volatility = if (symbol == "XAUUSD") 1.8 else 85.0
+        var price = lastKnownQuotes[symbol]?.ask ?: SymbolCatalog.getInitialQuote(symbol).ask
+        val volatility = when (symbol) {
+            "BTCUSD" -> 85.0
+            "ETHUSD" -> 6.5
+            "SOLUSD" -> 0.8
+            "XAUUSD" -> 1.8
+            "USOIL" -> 0.35
+            "USDJPY" -> 0.15
+            "EURUSD" -> 0.0006
+            "GBPUSD" -> 0.0008
+            else -> 0.5
+        }
         val intervalMillis = timeframe.minutes * 60 * 1000L
         val now = System.currentTimeMillis()
         val startTime = now - (count * intervalMillis)
@@ -257,8 +272,8 @@ class RealTimeMarketDataProvider(
             val open = price
             val change = (Random.nextDouble() - 0.48) * volatility * 2.0
             val close = open + change
-            val high = maxOf(open, close) + Random.nextDouble(0.1, volatility)
-            val low = minOf(open, close) - Random.nextDouble(0.1, volatility)
+            val high = maxOf(open, close) + Random.nextDouble(symConfig.tickSize, volatility)
+            val low = minOf(open, close) - Random.nextDouble(symConfig.tickSize, volatility)
             val volume = Random.nextDouble(50.0, 500.0)
 
             candles.add(

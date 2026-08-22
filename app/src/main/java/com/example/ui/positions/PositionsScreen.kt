@@ -153,6 +153,22 @@ fun PositionsScreen() {
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Auto Position Management Badges
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (pos.unrealizedR >= 1.0) {
+                                Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
+                                    Text("🛡️ Break-Even Locked", style = MaterialTheme.typography.labelSmall, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
+                            if (pos.unrealizedR >= 1.5) {
+                                Surface(color = CyanContainer, shape = RoundedCornerShape(4.dp)) {
+                                    Text("🎯 Trailing Active", style = MaterialTheme.typography.labelSmall, color = CyanLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
+                            }
+                        }
+
                         HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
 
                         Row(
@@ -161,15 +177,15 @@ fun PositionsScreen() {
                         ) {
                             Column {
                                 Text("Entry Price", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text("${pos.entryPrice}", style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontFamily = FontFamily.Monospace)
+                                Text(com.example.domain.model.SymbolCatalog.formatPrice(pos.symbol, pos.entryPrice), style = MaterialTheme.typography.bodyMedium, color = TextPrimary, fontFamily = FontFamily.Monospace)
                             }
                             Column {
                                 Text("Stop Loss", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text("${pos.stopLoss}", style = MaterialTheme.typography.bodyMedium, color = CrimsonLoss, fontFamily = FontFamily.Monospace)
+                                Text(com.example.domain.model.SymbolCatalog.formatPrice(pos.symbol, pos.stopLoss), style = MaterialTheme.typography.bodyMedium, color = CrimsonLoss, fontFamily = FontFamily.Monospace)
                             }
                             Column {
                                 Text("Take Profit", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                                Text("${pos.takeProfit}", style = MaterialTheme.typography.bodyMedium, color = EmeraldGain, fontFamily = FontFamily.Monospace)
+                                Text(com.example.domain.model.SymbolCatalog.formatPrice(pos.symbol, pos.takeProfit), style = MaterialTheme.typography.bodyMedium, color = EmeraldGain, fontFamily = FontFamily.Monospace)
                             }
                         }
 
@@ -177,7 +193,7 @@ fun PositionsScreen() {
                         OutlinedButton(
                             onClick = {
                                 coroutineScope.launch {
-                                    engine.closeAllPositions("Manual single position close")
+                                    engine.closeSinglePosition(pos.id)
                                 }
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = CrimsonLoss),
