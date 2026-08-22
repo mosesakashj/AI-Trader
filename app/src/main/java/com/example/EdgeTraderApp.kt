@@ -11,6 +11,7 @@ import com.google.firebase.FirebaseApp
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -51,6 +52,9 @@ class EdgeTraderApp : Application() {
         }
 
         CoroutineScope(Dispatchers.Default).launch {
+            // Wait for auth state to resolve before initializing engine
+            authManager.authState.first { it !is com.example.auth.AuthState.Loading }
+            delay(200) // Allow Firestore userId to propagate
             tradingEngine.initialize()
         }
     }

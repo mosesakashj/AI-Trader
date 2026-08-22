@@ -6,6 +6,7 @@ import com.example.data.entities.BotConfigEntity
 import com.example.data.entities.HeartbeatEntity
 import com.example.data.entities.SignalEntity
 import com.example.data.entities.SystemEventEntity
+import com.example.data.entities.WatchlistItemEntity
 import com.example.domain.model.*
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
