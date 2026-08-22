@@ -89,8 +89,8 @@ fun DashboardScreen(
                                 checked = isBotRunning,
                                 onCheckedChange = { viewModel.toggleTradingBot(it) },
                                 colors = SwitchDefaults.colors(
-                                    checkedThumbColor = TextPrimary,
-                                    checkedTrackColor = EmeraldDark,
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = EmeraldGain,
                                     uncheckedThumbColor = TextMuted,
                                     uncheckedTrackColor = SurfaceVariantDark
                                 ),
@@ -116,9 +116,9 @@ fun DashboardScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(48.dp).testTag("dashboard_emergency_stop_btn")
                     ) {
-                        Icon(Icons.Default.Dangerous, contentDescription = null, tint = TextPrimary)
+                        Icon(Icons.Default.Dangerous, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("EMERGENCY STOP (HALT ALL)", fontWeight = FontWeight.Black, color = TextPrimary)
+                        Text("EMERGENCY STOP (HALT ALL)", fontWeight = FontWeight.Black, color = Color.White)
                     }
                 }
             }
@@ -128,9 +128,9 @@ fun DashboardScreen(
         if (config?.safeMode == true || stateMachineState == StateMachineState.SAFE_MODE) {
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF381419)),
+                    colors = CardDefaults.cardColors(containerColor = CrimsonContainer),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, CrimsonLoss),
+                    border = BorderStroke(1.dp, CrimsonLoss.copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth().testTag("safe_mode_banner")
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -145,15 +145,15 @@ fun DashboardScreen(
                         Text(
                             text = config?.safeModeReason.takeIf { !it.isNullOrBlank() } ?: "System discrepancy detected. New trades blocked.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = TextPrimary
+                            color = CrimsonDark
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Button(
                             onClick = { viewModel.resetSafeMode() },
-                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceVariantDark),
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceDark),
                             modifier = Modifier.fillMaxWidth().testTag("reset_safe_mode_btn")
                         ) {
-                            Text("Acknowledge & Clear Safe Mode", color = CyanLight)
+                            Text("Acknowledge & Clear Safe Mode", color = PrimaryBlue, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -163,6 +163,7 @@ fun DashboardScreen(
         // 2. Financial Metrics Grid
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val pnlPercentage = if (accountInfo.balance > 0) (dailyPnl / accountInfo.balance) * 100.0 else 0.0
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -178,7 +179,7 @@ fun DashboardScreen(
                     MetricCard(
                         title = "Today's P/L",
                         value = "${if (dailyPnl >= 0) "+" else ""}$${"%.2f".format(dailyPnl)}",
-                        subtitle = "${if (dailyPnl >= 0) "+" else ""}${"%.2f".format((dailyPnl / 10000.0) * 100.0)}%",
+                        subtitle = "${if (dailyPnl >= 0) "+" else ""}${"%.2f".format(pnlPercentage)}%",
                         valueColor = if (dailyPnl >= 0) EmeraldGain else CrimsonLoss,
                         modifier = Modifier.weight(1f),
                         testTag = "daily_pnl_metric_card"
@@ -228,92 +229,107 @@ fun DashboardScreen(
 
                 // XAUUSD Card
                 val xau = quotes["XAUUSD"]
+                val xauSession = com.example.broker.MarketScheduleUtils.getMarketSession("XAUUSD")
                 Card(
                     colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, CardBorderDark),
                     modifier = Modifier.fillMaxWidth().testTag("xauusd_quote_card")
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("XAUUSD", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = GoldHero)
-                                Surface(color = SurfaceVariantDark, shape = RoundedCornerShape(4.dp)) {
-                                    Text("Gold Spot", style = MaterialTheme.typography.labelSmall, color = TextSecondary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("XAUUSD", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = GoldHero)
+                                    Surface(
+                                        color = if (xauSession.isOpen) EmeraldContainer else GoldContainer,
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            if (xauSession.isOpen) "Open" else "Weekend Close",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (xauSession.isOpen) EmeraldDark else GoldHero,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
                                 }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (xauSession.isOpen) "Spread: ${xau?.spread?.let { "%.2f".format(it) } ?: "--"} ($0.01 tick)" else "Friday Spot Close (Reopens Sun 22:00 UTC)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted
+                                )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Spread: ${xau?.spread?.let { "%.2f".format(it) } ?: "--"} ($0.01 tick)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextMuted
-                            )
-                        }
 
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = xau?.ask?.let { "$%.2f".format(it) } ?: "2650.45",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Text(
-                                text = "Bid: ${xau?.bid?.let { "$%.2f".format(it) } ?: "2650.20"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary,
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = xau?.ask?.let { "$%.2f".format(it) } ?: "Syncing...",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = xau?.bid?.let { "Bid: $%.2f".format(it) } ?: "Connecting...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
 
                 // BTCUSD Card
                 val btc = quotes["BTCUSD"]
+                val btcSession = com.example.broker.MarketScheduleUtils.getMarketSession("BTCUSD")
                 Card(
                     colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                     shape = RoundedCornerShape(16.dp),
                     border = BorderStroke(1.dp, CardBorderDark),
                     modifier = Modifier.fillMaxWidth().testTag("btcusd_quote_card")
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("BTCUSD", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = CyanLight)
-                                Surface(color = SurfaceVariantDark, shape = RoundedCornerShape(4.dp)) {
-                                    Text("Crypto", style = MaterialTheme.typography.labelSmall, color = TextSecondary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("BTCUSD", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = CyanLight)
+                                    Surface(color = EmeraldContainer, shape = RoundedCornerShape(4.dp)) {
+                                        Text("Live 24/7", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = EmeraldDark, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    }
                                 }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Spread: ${btc?.spread?.let { "$%.1f".format(it) } ?: "--"} (Real-Time Feed)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted
+                                )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Spread: ${btc?.spread?.let { "$%.1f".format(it) } ?: "--"}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextMuted
-                            )
-                        }
 
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = btc?.ask?.let { "$%.1f".format(it) } ?: "91250.0",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Text(
-                                text = "Bid: ${btc?.bid?.let { "$%.1f".format(it) } ?: "91245.5"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary,
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = btc?.ask?.let { "$%.1f".format(it) } ?: "Syncing...",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = btc?.bid?.let { "Bid: $%.1f".format(it) } ?: "Connecting...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
@@ -383,12 +399,12 @@ fun DashboardScreen(
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Surface(
-                                            color = if (pos.direction == TradeDirection.BUY) Color(0xFF063321) else Color(0xFF381419),
+                                            color = if (pos.direction == TradeDirection.BUY) EmeraldContainer else CrimsonContainer,
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
                                             Text(
                                                 text = pos.direction.name,
-                                                color = if (pos.direction == TradeDirection.BUY) EmeraldGain else CrimsonLoss,
+                                                color = if (pos.direction == TradeDirection.BUY) EmeraldDark else CrimsonDark,
                                                 fontWeight = FontWeight.Black,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -414,7 +430,7 @@ fun DashboardScreen(
                                     }
                                 }
 
-                                Divider(color = CardBorderDark, modifier = Modifier.padding(vertical = 10.dp))
+                                HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 10.dp))
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -470,12 +486,12 @@ fun DashboardScreen(
                                     color = TextPrimary
                                 )
                                 Surface(
-                                    color = if (signal.explanation.isAllPassed) Color(0xFF063321) else Color(0xFF2E2611),
+                                    color = if (signal.explanation.isAllPassed) EmeraldContainer else GoldContainer,
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
                                         text = signal.explanation.decision,
-                                        color = if (signal.explanation.isAllPassed) EmeraldGain else GoldHero,
+                                        color = if (signal.explanation.isAllPassed) EmeraldDark else GoldHero,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.labelSmall,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

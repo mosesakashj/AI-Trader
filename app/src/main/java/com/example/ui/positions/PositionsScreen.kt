@@ -79,9 +79,9 @@ fun PositionsScreen() {
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(48.dp).testTag("positions_close_all_btn")
                 ) {
-                    Icon(Icons.Default.Dangerous, contentDescription = null, tint = TextPrimary)
+                    Icon(Icons.Default.Dangerous, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("CLOSE ALL ACTIVE POSITIONS", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("CLOSE ALL ACTIVE POSITIONS", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
@@ -122,12 +122,12 @@ fun PositionsScreen() {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Surface(
-                                    color = if (pos.direction == TradeDirection.BUY) Color(0xFF063321) else Color(0xFF381419),
+                                    color = if (pos.direction == TradeDirection.BUY) EmeraldContainer else CrimsonContainer,
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
                                         text = pos.direction.name,
-                                        color = if (pos.direction == TradeDirection.BUY) EmeraldGain else CrimsonLoss,
+                                        color = if (pos.direction == TradeDirection.BUY) EmeraldDark else CrimsonDark,
                                         fontWeight = FontWeight.Black,
                                         style = MaterialTheme.typography.labelSmall,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -153,7 +153,7 @@ fun PositionsScreen() {
                             }
                         }
 
-                        Divider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                        HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),

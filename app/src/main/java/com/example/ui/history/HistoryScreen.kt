@@ -148,12 +148,12 @@ fun HistoryScreen() {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Surface(
-                                    color = if (trade.direction == TradeDirection.BUY) Color(0xFF063321) else Color(0xFF381419),
+                                    color = if (trade.direction == TradeDirection.BUY) EmeraldContainer else CrimsonContainer,
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
                                         text = trade.direction.name,
-                                        color = if (trade.direction == TradeDirection.BUY) EmeraldGain else CrimsonLoss,
+                                        color = if (trade.direction == TradeDirection.BUY) EmeraldDark else CrimsonDark,
                                         fontWeight = FontWeight.Black,
                                         style = MaterialTheme.typography.labelSmall,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -179,7 +179,7 @@ fun HistoryScreen() {
                             }
                         }
 
-                        Divider(color = CardBorderDark, modifier = Modifier.padding(vertical = 10.dp))
+                        HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 10.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),

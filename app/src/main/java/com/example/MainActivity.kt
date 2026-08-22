@@ -7,10 +7,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -68,21 +70,30 @@ class MainActivity : ComponentActivity() {
                             Spacer(modifier = Modifier.height(24.dp))
                             Row(
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.TrendingUp, contentDescription = null, tint = CyanLight, modifier = Modifier.size(28.dp))
+                                Surface(
+                                    color = PrimaryBlueContainer,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.TrendingUp, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(24.dp))
+                                    }
+                                }
                                 Column {
-                                    Text("EdgeTrader", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = TextPrimary)
-                                    Text("On-Device Algorithmic Engine", style = MaterialTheme.typography.labelSmall, color = CyanLight)
+                                    Text("EdgeTrader", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, color = TextPrimary)
+                                    Text("On-Device Algorithmic Engine", style = MaterialTheme.typography.labelSmall, color = PrimaryBlue)
                                 }
                             }
-                            Divider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                            HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 12.dp))
 
                             drawerNavItems.forEach { screen ->
                                 val isSelected = currentRoute == screen.route
                                 NavigationDrawerItem(
-                                    icon = { Icon(screen.icon, contentDescription = null, tint = if (isSelected) CyanLight else TextSecondary) },
-                                    label = { Text(screen.title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, color = if (isSelected) CyanLight else TextPrimary) },
+                                    icon = { Icon(screen.icon, contentDescription = null, tint = if (isSelected) PrimaryBlue else TextSecondary) },
+                                    label = { Text(screen.title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, color = if (isSelected) OnPrimaryBlueContainer else TextSecondary) },
                                     selected = isSelected,
                                     onClick = {
                                         scope.launch { drawerState.close() }
@@ -95,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = SurfaceVariantDark,
+                                        selectedContainerColor = PrimaryBlueContainer,
                                         unselectedContainerColor = Color.Transparent
                                     ),
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).testTag("drawer_item_${screen.route}")
@@ -143,13 +154,14 @@ class MainActivity : ComponentActivity() {
                         bottomBar = {
                             NavigationBar(
                                 containerColor = SurfaceDark,
-                                contentColor = TextPrimary
+                                contentColor = TextPrimary,
+                                tonalElevation = 1.dp
                             ) {
                                 bottomNavItems.forEach { screen ->
                                     val isSelected = currentRoute == screen.route
                                     NavigationBarItem(
                                         icon = { Icon(screen.icon, contentDescription = screen.title) },
-                                        label = { Text(screen.title, style = MaterialTheme.typography.labelSmall) },
+                                        label = { Text(screen.title, style = MaterialTheme.typography.labelSmall, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                                         selected = isSelected,
                                         onClick = {
                                             if (currentRoute != screen.route) {
@@ -161,9 +173,9 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
                                         colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = CyanLight,
-                                            selectedTextColor = CyanLight,
-                                            indicatorColor = SurfaceVariantDark,
+                                            selectedIconColor = PrimaryBlue,
+                                            selectedTextColor = PrimaryBlue,
+                                            indicatorColor = PrimaryBlueContainer,
                                             unselectedIconColor = TextSecondary,
                                             unselectedTextColor = TextSecondary
                                         ),

@@ -23,7 +23,7 @@ class TradingEngine(
     private val repository: TradingRepository,
     private val notificationManager: AppNotificationManager,
     private val brokerFactory: (TradingMode) -> BrokerAdapter,
-    private val marketDataProvider: MarketDataProvider = PaperMarketDataProvider()
+    val marketDataProvider: MarketDataProvider = PaperMarketDataProvider()
 ) {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -266,6 +266,12 @@ class TradingEngine(
     private suspend fun evaluateSymbol(symbol: String, quote: Quote) {
         val symbolConfig = symbolConfigs[symbol] ?: return
         if (!symbolConfig.enabled) return
+
+        // Check if market is open for trading (e.g. Gold weekend close)
+        val sessionInfo = MarketScheduleUtils.getMarketSession(symbol)
+        if (!sessionInfo.isOpen) {
+            return
+        }
 
         val candles = candlesMap[symbol] ?: return
         val lastProcessedTime = lastProcessedCandleTimes[symbol] ?: 0L
@@ -510,6 +516,16 @@ class TradingEngine(
     }
 
     fun getCandles(symbol: String): List<Candle> = candlesMap[symbol]?.toList() ?: emptyList()
+
+    suspend fun fetchHistoricalCandles(symbol: String, timeframe: Timeframe, count: Int = 80): List<Candle> {
+        val candles = marketDataProvider.getHistoricalCandles(symbol, timeframe, count)
+        if (candles.isNotEmpty()) {
+            candlesMap[symbol] = candles.toMutableList()
+        }
+        return candles
+    }
+
+    fun getMarketSession(symbol: String): MarketSessionInfo = MarketScheduleUtils.getMarketSession(symbol)
 
     private fun updateConfigurationsFromEntity(config: BotConfigEntity) {
         strategy = TradingStrategy(

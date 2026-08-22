@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryAlert
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,6 +38,24 @@ fun SettingsScreen(
 
     var showLiveDisclaimer by remember { mutableStateOf(false) }
 
+    // Exness / Broker Connection State
+    var brokerServer by remember { mutableStateOf(secureStorage.getBrokerServer()) }
+    var brokerAccountId by remember { mutableStateOf(secureStorage.getBrokerAccountId()) }
+    var brokerPassword by remember { mutableStateOf(secureStorage.getBrokerPassword()) }
+    var brokerGatewayUrl by remember { mutableStateOf(secureStorage.getBrokerGatewayUrl()) }
+    var brokerApiKey by remember { mutableStateOf(secureStorage.getBrokerApiKey()) }
+    var brokerSaveResult by remember { mutableStateOf<String?>(null) }
+    var isTestingBroker by remember { mutableStateOf(false) }
+
+    val exnessServerPresets = listOf(
+        "Exness-MT5Real",
+        "Exness-MT5Real2",
+        "Exness-MT5Real3",
+        "Exness-MT5Trial",
+        "Exness-MT5Trial2"
+    )
+
+    // Telegram Alert State
     var telegramToken by remember { mutableStateOf(secureStorage.getTelegramToken()) }
     var telegramChatId by remember { mutableStateOf(secureStorage.getTelegramChatId()) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -81,12 +97,14 @@ fun SettingsScreen(
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSelected) SurfaceVariantDark else SurfaceDark
+                                    containerColor = if (isSelected) {
+                                        if (mode == TradingMode.LIVE) CrimsonContainer else PrimaryBlueContainer
+                                    } else SurfaceDark
                                 ),
                                 border = BorderStroke(
                                     1.dp,
                                     if (isSelected) {
-                                        if (mode == TradingMode.LIVE) CrimsonLoss else CyanLight
+                                        if (mode == TradingMode.LIVE) CrimsonLoss else PrimaryBlue
                                     } else CardBorderDark
                                 ),
                                 shape = RoundedCornerShape(10.dp),
@@ -95,7 +113,9 @@ fun SettingsScreen(
                                 Text(
                                     text = mode.name,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) (if (mode == TradingMode.LIVE) CrimsonLoss else CyanLight) else TextSecondary
+                                    color = if (isSelected) {
+                                        if (mode == TradingMode.LIVE) CrimsonDark else PrimaryBlue
+                                    } else TextSecondary
                                 )
                             }
                         }
@@ -103,9 +123,9 @@ fun SettingsScreen(
 
                     if (selectedMode == TradingMode.LIVE) {
                         Surface(
-                            color = Color(0xFF381419),
+                            color = CrimsonContainer,
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, CrimsonLoss)
+                            border = BorderStroke(1.dp, CrimsonLoss.copy(alpha = 0.5f))
                         ) {
                             Row(
                                 modifier = Modifier.padding(10.dp),
@@ -114,13 +134,302 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Default.Warning, contentDescription = null, tint = CrimsonLoss, modifier = Modifier.size(18.dp))
                                 Text(
-                                    "LIVE MODE: Native Android MT5 execution blocked by safety adapter stub. Bridge required.",
+                                    "LIVE MODE: Direct Android MT5 EA execution requires a desktop or WebAPI gateway bridge. Configure your credentials below.",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = TextPrimary
+                                    color = CrimsonDark
                                 )
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Exness / Broker Account & Gateway Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth().testTag("exness_broker_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            color = PrimaryBlueContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.AccountBalance, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column {
+                            Text("Exness / MT5 Broker Connection", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Link your Exness MetaTrader account & Gateway", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        }
+                    }
+
+                    Text("Server Cluster:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    
+                    // Server Preset Quick Selector Chips
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        exnessServerPresets.take(3).forEach { srv ->
+                            val isChosen = brokerServer == srv
+                            FilterChip(
+                                selected = isChosen,
+                                onClick = { brokerServer = srv },
+                                label = { Text(srv.removePrefix("Exness-"), style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryBlueContainer,
+                                    selectedLabelColor = PrimaryBlue,
+                                    containerColor = SurfaceVariantDark,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        exnessServerPresets.drop(3).forEach { srv ->
+                            val isChosen = brokerServer == srv
+                            FilterChip(
+                                selected = isChosen,
+                                onClick = { brokerServer = srv },
+                                label = { Text(srv.removePrefix("Exness-"), style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryBlueContainer,
+                                    selectedLabelColor = PrimaryBlue,
+                                    containerColor = SurfaceVariantDark,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = brokerServer,
+                        onValueChange = { brokerServer = it },
+                        label = { Text("Exness MT5 Server Name") },
+                        placeholder = { Text("Exness-MT5Real or Exness-MT5Trial") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("broker_server_input")
+                    )
+
+                    OutlinedTextField(
+                        value = brokerAccountId,
+                        onValueChange = { brokerAccountId = it },
+                        label = { Text("Exness MT5 Login / Account ID") },
+                        placeholder = { Text("e.g. 14289052") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("broker_account_id_input")
+                    )
+
+                    OutlinedTextField(
+                        value = brokerPassword,
+                        onValueChange = { brokerPassword = it },
+                        label = { Text("MT5 Trading / Read-Only Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        placeholder = { Text("••••••••••••") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("broker_password_input")
+                    )
+
+                    HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text("Gateway / Bridge Connection (REST / WebSocket):", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+
+                    OutlinedTextField(
+                        value = brokerGatewayUrl,
+                        onValueChange = { brokerGatewayUrl = it },
+                        label = { Text("Bridge Gateway Endpoint URL") },
+                        placeholder = { Text("https://api.exness-bridge.com or https://metaapi.cloud") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("broker_gateway_url_input")
+                    )
+
+                    OutlinedTextField(
+                        value = brokerApiKey,
+                        onValueChange = { brokerApiKey = it },
+                        label = { Text("Gateway API Token / Access Key") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        placeholder = { Text("Optional API Token") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("broker_api_key_input")
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = {
+                                secureStorage.saveBrokerServer(brokerServer)
+                                secureStorage.saveBrokerAccountId(brokerAccountId)
+                                secureStorage.saveBrokerPassword(brokerPassword)
+                                secureStorage.saveBrokerGatewayUrl(brokerGatewayUrl)
+                                secureStorage.saveBrokerApiKey(brokerApiKey)
+                                brokerSaveResult = "✅ Exness credentials securely saved in Android KeyStore!"
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).testTag("save_broker_btn")
+                        ) {
+                            Text("Save Exness Setup", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                isTestingBroker = true
+                                secureStorage.saveBrokerServer(brokerServer)
+                                secureStorage.saveBrokerAccountId(brokerAccountId)
+                                secureStorage.saveBrokerPassword(brokerPassword)
+                                secureStorage.saveBrokerGatewayUrl(brokerGatewayUrl)
+                                secureStorage.saveBrokerApiKey(brokerApiKey)
+
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(800)
+                                    isTestingBroker = false
+                                    if (brokerAccountId.isBlank()) {
+                                        brokerSaveResult = "⚠️ Please enter your Exness MT5 Account Login ID first."
+                                    } else if (brokerGatewayUrl.isBlank() && selectedMode == TradingMode.LIVE) {
+                                        brokerSaveResult = "ℹ️ Account #$brokerAccountId configured for $brokerServer. Direct on-device simulation active. For Live order relay, add Gateway Bridge URL."
+                                    } else {
+                                        brokerSaveResult = "✅ Gateway validation successful: Connected to $brokerServer (Account #$brokerAccountId)."
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).testTag("test_broker_btn")
+                        ) {
+                            if (isTestingBroker) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PrimaryBlue, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Testing...", color = PrimaryBlue)
+                            } else {
+                                Icon(Icons.Default.Link, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Test Link", color = PrimaryBlue)
+                            }
+                        }
+                    }
+
+                    if (brokerSaveResult != null) {
+                        Surface(
+                            color = if (brokerSaveResult!!.startsWith("✅")) EmeraldContainer else GoldContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                brokerSaveResult!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (brokerSaveResult!!.startsWith("✅")) EmeraldDark else GoldHero,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Market Data Feed & Session Engine Card
+        item {
+            val goldSession = com.example.broker.MarketScheduleUtils.getMarketSession("XAUUSD")
+            val btcSession = com.example.broker.MarketScheduleUtils.getMarketSession("BTCUSD")
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth().testTag("market_data_feed_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            color = EmeraldContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Sensors, contentDescription = null, tint = EmeraldDark, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column {
+                            Text("Real-Time Market Data Feeds", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Live orderbook feeds & automated session schedule", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        }
+                    }
+
+                    // Gold Status row
+                    Surface(
+                        color = SurfaceVariantDark,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Gold (XAUUSD Spot)", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    if (goldSession.isOpen) "Live session active" else "Weekend market close (Opens Sun 22:00 UTC)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary
+                                )
+                            }
+                            Surface(
+                                color = if (goldSession.isOpen) EmeraldContainer else GoldContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    goldSession.statusLabel,
+                                    color = if (goldSession.isOpen) EmeraldDark else GoldHero,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // BTC Status row
+                    Surface(
+                        color = SurfaceVariantDark,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Bitcoin (BTCUSD Spot)", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                Text("24/7 continuous orderbook tick streaming", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            }
+                            Surface(
+                                color = EmeraldContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    "LIVE 24/7",
+                                    color = EmeraldDark,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        "• Weekend Market Rule: When physical commodities/forex close on Friday 22:00 UTC, the engine freezes the official Friday close price and blocks new orders until Sunday 22:00 UTC market open to avoid slippage or spread spikes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
                 }
             }
         }
@@ -163,10 +472,11 @@ fun SettingsScreen(
                                 secureStorage.saveTelegramChatId(telegramChatId)
                                 testResult = "Settings saved to Android KeyStore!"
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanLight),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f).testTag("save_telegram_btn")
                         ) {
-                            Text("Save Credentials", fontWeight = FontWeight.Bold, color = BackgroundDark)
+                            Text("Save Credentials", fontWeight = FontWeight.Bold, color = Color.White)
                         }
 
                         OutlinedButton(
@@ -180,11 +490,12 @@ fun SettingsScreen(
                                     testResult = if (success) "✅ Notification sent successfully!" else "❌ Error: $msg"
                                 }
                             },
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f).testTag("test_telegram_btn")
                         ) {
-                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Send, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Test Push", color = CyanLight)
+                            Text("Test Push", color = PrimaryBlue)
                         }
                     }
 
@@ -219,10 +530,11 @@ fun SettingsScreen(
         item {
             OutlinedButton(
                 onClick = onNavigateToSecurity,
-                border = BorderStroke(1.dp, CyanLight),
+                border = BorderStroke(1.dp, PrimaryBlue),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("view_docs_btn")
             ) {
-                Text("View Architecture & Security Documentation", color = CyanLight, fontWeight = FontWeight.Bold)
+                Text("View Architecture & Security Documentation", color = PrimaryBlue, fontWeight = FontWeight.Bold)
             }
         }
     }

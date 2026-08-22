@@ -65,12 +65,17 @@ fun LogsScreen() {
                     FilterChip(
                         selected = isSelected,
                         onClick = { selectedLevel = lvl },
-                        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                        label = { Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = CyanLight,
-                            selectedLabelColor = BackgroundDark,
+                            selectedContainerColor = PrimaryBlueContainer,
+                            selectedLabelColor = PrimaryBlue,
                             containerColor = SurfaceDark,
                             labelColor = TextSecondary
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = if (isSelected) PrimaryBlue else CardBorderDark
                         ),
                         modifier = Modifier.testTag("log_filter_$label")
                     )
@@ -123,10 +128,10 @@ fun LogsScreen() {
         } else {
             items(filteredLogs, key = { it.id }) { log ->
                 val (lvlColor, bgBadge) = when (log.level) {
-                    "INFO" -> CyanLight to Color(0xFF0D2836)
-                    "WARN" -> StatusWarning to Color(0xFF33290D)
-                    "ERROR" -> StatusError to Color(0xFF3B1219)
-                    "CRITICAL" -> CrimsonLoss to Color(0xFF4C0F17)
+                    "INFO" -> PrimaryBlue to PrimaryBlueContainer
+                    "WARN" -> GoldHero to GoldContainer
+                    "ERROR" -> CrimsonLoss to CrimsonContainer
+                    "CRITICAL" -> CrimsonDark to CrimsonContainer
                     else -> TextSecondary to SurfaceVariantDark
                 }
 

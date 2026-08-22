@@ -86,15 +86,15 @@ fun ModeBadge(
     modifier: Modifier = Modifier
 ) {
     val (bgColor, textColor) = when (mode) {
-        TradingMode.PAPER -> Color(0xFF1E293B) to CyanLight
-        TradingMode.DEMO -> Color(0xFF2E2611) to GoldLight
-        TradingMode.LIVE -> Color(0xFF3B1219) to CrimsonLoss
+        TradingMode.PAPER -> PrimaryBlueContainer to PrimaryBlue
+        TradingMode.DEMO -> GoldContainer to GoldHero
+        TradingMode.LIVE -> CrimsonContainer to CrimsonLoss
     }
 
     Surface(
         color = bgColor,
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, textColor.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, textColor.copy(alpha = 0.3f)),
         modifier = modifier
     ) {
         Text(
@@ -121,6 +121,7 @@ fun MetricCard(
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, CardBorderDark),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier.testTag(testTag)
     ) {
         Column(
@@ -158,9 +159,9 @@ fun FactorChip(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = if (passed) Color(0xFF063321) else Color(0xFF381419),
+        color = if (passed) EmeraldContainer else CrimsonContainer,
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, if (passed) EmeraldGain.copy(alpha = 0.5f) else CrimsonLoss.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, if (passed) EmeraldGain.copy(alpha = 0.3f) else CrimsonLoss.copy(alpha = 0.3f)),
         modifier = modifier
     ) {
         Row(
@@ -177,7 +178,7 @@ fun FactorChip(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (passed) TextPrimary else TextSecondary,
+                color = if (passed) EmeraldDark else CrimsonDark,
                 fontWeight = FontWeight.SemiBold
             )
         }

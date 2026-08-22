@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,7 +36,7 @@ fun EmergencyStopDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
                 modifier = Modifier.testTag("confirm_emergency_stop_btn")
             ) {
-                Text("HALT TRADING NOW", fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("HALT TRADING NOW", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         dismissButton = {
@@ -92,7 +93,7 @@ fun CloseAllPositionsDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
                 modifier = Modifier.testTag("execute_close_all_btn")
             ) {
-                Text("LIQUIDATE ALL", fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("LIQUIDATE ALL", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         dismissButton = {
@@ -152,7 +153,7 @@ fun LiveModeDisclaimerDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
                 modifier = Modifier.testTag("confirm_live_mode_btn")
             ) {
-                Text("ENABLE LIVE MODE", fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("ENABLE LIVE MODE", fontWeight = FontWeight.Bold, color = Color.White)
             }
         },
         dismissButton = {

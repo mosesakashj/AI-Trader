@@ -4,6 +4,7 @@ import android.app.Application
 import com.example.broker.DemoBrokerAdapter
 import com.example.broker.LiveBrokerAdapter
 import com.example.broker.PaperBrokerAdapter
+import com.example.broker.RealTimeMarketDataProvider
 import com.example.data.database.EdgeTraderDatabase
 import com.example.data.repositories.TradingRepository
 import com.example.domain.model.TradingMode
@@ -45,6 +46,8 @@ class EdgeTraderApp : Application() {
         val telegramNotifier = TelegramNotifier(secureStorage, repository)
         notificationManager = AppNotificationManager(androidNotifier, telegramNotifier)
 
+        val marketDataProvider = RealTimeMarketDataProvider(secureStorage)
+
         tradingEngine = TradingEngine(
             repository = repository,
             notificationManager = notificationManager,
@@ -52,9 +55,10 @@ class EdgeTraderApp : Application() {
                 when (mode) {
                     TradingMode.PAPER -> PaperBrokerAdapter()
                     TradingMode.DEMO -> DemoBrokerAdapter()
-                    TradingMode.LIVE -> LiveBrokerAdapter()
+                    TradingMode.LIVE -> LiveBrokerAdapter(secureStorage)
                 }
-            }
+            },
+            marketDataProvider = marketDataProvider
         )
 
         CoroutineScope(Dispatchers.Default).launch {

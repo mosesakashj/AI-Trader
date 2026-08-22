@@ -16,23 +16,52 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.EdgeTraderApp
 import com.example.domain.indicators.IndicatorCalculator
+import com.example.domain.model.Candle
 import com.example.domain.model.Timeframe
-import com.example.ui.components.MiniCandleChart
+import com.example.ui.components.InteractiveCandleChart
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun MarketsScreen() {
     val engine = EdgeTraderApp.instance.tradingEngine
     val quotes by engine.activeQuotes.collectAsState()
+    val scope = rememberCoroutineScope()
+
     var selectedSymbol by remember { mutableStateOf("XAUUSD") }
     var selectedTimeframe by remember { mutableStateOf(Timeframe.M15) }
+    var candlesList by remember { mutableStateOf<List<Candle>>(emptyList()) }
+    var isLoadingCandles by remember { mutableStateOf(false) }
 
-    val candles = engine.getCandles(selectedSymbol)
     val quote = quotes[selectedSymbol]
 
-    val indicators = remember(candles) {
-        if (candles.size >= 50) {
-            IndicatorCalculator.computeLatest(candles)
+    // Fetch real live candles whenever symbol or timeframe changes
+    LaunchedEffect(selectedSymbol, selectedTimeframe) {
+        isLoadingCandles = true
+        candlesList = engine.fetchHistoricalCandles(selectedSymbol, selectedTimeframe, 60)
+        isLoadingCandles = false
+    }
+
+    // Dynamic live tick update on the active candle
+    val activeCandles = remember(candlesList, quote) {
+        if (candlesList.isEmpty() || quote == null) {
+            candlesList
+        } else {
+            val list = candlesList.toMutableList()
+            val last = list.last()
+            val updatedLast = last.copy(
+                close = quote.ask,
+                high = maxOf(last.high, quote.ask),
+                low = minOf(last.low, quote.ask)
+            )
+            list[list.lastIndex] = updatedLast
+            list
+        }
+    }
+
+    val indicators = remember(activeCandles) {
+        if (activeCandles.size >= 30) {
+            IndicatorCalculator.computeLatest(activeCandles)
         } else null
     }
 
@@ -44,7 +73,7 @@ fun MarketsScreen() {
         contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Symbol Selector Tabs
+        // 1. Symbol Selector Tabs (Gold / Bitcoin)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -55,30 +84,69 @@ fun MarketsScreen() {
                     Button(
                         onClick = { selectedSymbol = symbol },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isSelected) SurfaceVariantDark else SurfaceDark
+                            containerColor = if (isSelected) PrimaryBlueContainer else SurfaceDark
                         ),
-                        border = BorderStroke(1.dp, if (isSelected) CyanLight else CardBorderDark),
+                        border = BorderStroke(1.dp, if (isSelected) PrimaryBlue else CardBorderDark),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f).height(48.dp).testTag("market_tab_$symbol")
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(symbol, fontWeight = FontWeight.Bold, color = if (isSelected) CyanLight else TextSecondary)
-                            Text(name, style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                            Text(symbol, fontWeight = FontWeight.Bold, color = if (isSelected) PrimaryBlue else TextSecondary)
+                            Text(name, style = MaterialTheme.typography.labelSmall, color = if (isSelected) OnPrimaryBlueContainer else TextMuted)
                         }
                     }
                 }
             }
         }
 
-        // Live Price Hero Card
+        // 2. Live Price Hero Summary Card
         item {
+            val session = engine.getMarketSession(selectedSymbol)
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(1.dp, CardBorderDark),
                 modifier = Modifier.fillMaxWidth().testTag("market_hero_card")
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    // Session Status Bar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = if (session.isOpen) EmeraldContainer else GoldContainer,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(100.dp),
+                                    color = if (session.isOpen) EmeraldGain else GoldHero,
+                                    modifier = Modifier.size(8.dp)
+                                ) {}
+                                Text(
+                                    text = session.statusLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (session.isOpen) EmeraldDark else GoldHero
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = if (session.isOpen) "Live Exchange Feed" else (session.timeRemainingString ?: "Weekend Close"),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -100,33 +168,67 @@ fun MarketsScreen() {
 
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
-                                text = quote?.ask?.let { "$%.2f".format(it) } ?: "--",
+                                text = quote?.ask?.let { "$%.2f".format(it) } ?: activeCandles.lastOrNull()?.close?.let { "$%.2f".format(it) } ?: "--",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
-                                text = "Spread: ${quote?.spread?.let { "$%.2f".format(it) } ?: "--"}",
+                                text = if (session.isOpen) "Spread: ${quote?.spread?.let { "$%.2f".format(it) } ?: "--"}" else "Friday Official Close",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = EmeraldGain
+                                color = if (session.isOpen) EmeraldGain else GoldHero
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Rolling M15 Candlesticks (30 bars):", style = MaterialTheme.typography.labelSmall, color = TextMuted)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    MiniCandleChart(
-                        candles = candles,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    if (!session.isOpen) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            color = SurfaceVariantDark,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, CardBorderDark)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = "ℹ️ Saturday/Sunday Weekend Session:",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = session.details,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Technical Indicators Panel
+        // 3. Real Interactive Financial Candlestick Chart
+        item {
+            InteractiveCandleChart(
+                candles = activeCandles,
+                currentQuote = quote,
+                timeframe = selectedTimeframe,
+                onTimeframeSelected = { tf ->
+                    selectedTimeframe = tf
+                },
+                onRefresh = {
+                    scope.launch {
+                        isLoadingCandles = true
+                        candlesList = engine.fetchHistoricalCandles(selectedSymbol, selectedTimeframe, 60)
+                        isLoadingCandles = false
+                    }
+                },
+                isLoading = isLoadingCandles
+            )
+        }
+
+        // 4. Technical Indicators Panel
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
@@ -135,7 +237,26 @@ fun MarketsScreen() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Technical Indicator Telemetry", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Technical Indicator Telemetry", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Surface(
+                            color = SurfaceVariantDark,
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, CardBorderDark)
+                        ) {
+                            Text(
+                                text = selectedTimeframe.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = PrimaryBlue,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Card(colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark), modifier = Modifier.weight(1f)) {
@@ -178,7 +299,7 @@ fun MarketsScreen() {
             }
         }
 
-        // Broker Specifications
+        // 5. Broker Specifications
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),

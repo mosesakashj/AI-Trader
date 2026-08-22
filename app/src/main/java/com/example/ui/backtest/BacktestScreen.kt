@@ -101,19 +101,19 @@ fun BacktestScreen() {
                 Button(
                     onClick = { testMode = 0 },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (testMode == 0) SurfaceVariantDark else SurfaceDark
+                        containerColor = if (testMode == 0) PrimaryBlueContainer else SurfaceDark
                     ),
-                    border = BorderStroke(1.dp, if (testMode == 0) CyanLight else CardBorderDark),
+                    border = BorderStroke(1.dp, if (testMode == 0) PrimaryBlue else CardBorderDark),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f).height(48.dp).testTag("standard_backtest_tab")
                 ) {
-                    Text("Standard Backtest", fontWeight = FontWeight.Bold, color = if (testMode == 0) CyanLight else TextSecondary)
+                    Text("Standard Backtest", fontWeight = FontWeight.Bold, color = if (testMode == 0) PrimaryBlue else TextSecondary)
                 }
 
                 Button(
                     onClick = { testMode = 1 },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (testMode == 1) SurfaceVariantDark else SurfaceDark
+                        containerColor = if (testMode == 1) GoldContainer else SurfaceDark
                     ),
                     border = BorderStroke(1.dp, if (testMode == 1) GoldHero else CardBorderDark),
                     shape = RoundedCornerShape(12.dp),
@@ -189,18 +189,18 @@ fun BacktestScreen() {
                             }
                         },
                         enabled = !isRunning,
-                        colors = ButtonDefaults.buttonColors(containerColor = CyanLight),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(50.dp).testTag("run_backtest_btn")
                     ) {
                         if (isRunning) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = BackgroundDark)
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Simulating tick physics...", color = BackgroundDark, fontWeight = FontWeight.Bold)
+                            Text("Simulating tick physics...", color = Color.White, fontWeight = FontWeight.Bold)
                         } else {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = BackgroundDark)
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Run Algorithmic Backtest", fontWeight = FontWeight.Bold, color = BackgroundDark)
+                            Text("Run Algorithmic Backtest", fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
@@ -233,7 +233,7 @@ fun BacktestScreen() {
                         Text("Simulated Account Equity Curve:", style = MaterialTheme.typography.labelSmall, color = TextMuted)
                         SparklineChart(points = res.equityCurve, lineColor = if (res.totalProfitLoss >= 0) EmeraldGain else CrimsonLoss)
 
-                        Divider(color = CardBorderDark)
+                        HorizontalDivider(color = CardBorderDark)
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             MetricCard(title = "Win Rate", value = "${"%.1f".format(res.winRate)}%", subtitle = "${res.winningTrades}W / ${res.losingTrades}L", modifier = Modifier.weight(1f))

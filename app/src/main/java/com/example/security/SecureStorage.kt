@@ -95,6 +95,22 @@ class SecureStorage(context: Context) {
     fun getTelegramChatId(): String = prefs.getString("telegram_chat_id", "") ?: ""
     fun saveTelegramChatId(chatId: String) = prefs.edit().putString("telegram_chat_id", chatId).apply()
 
+    // Exness / Broker Account & Gateway Credentials
+    fun getBrokerServer(): String = prefs.getString("broker_server", "Exness-MT5Real") ?: "Exness-MT5Real"
+    fun saveBrokerServer(server: String) = prefs.edit().putString("broker_server", server).apply()
+
+    fun getBrokerAccountId(): String = prefs.getString("broker_account_id", "") ?: ""
+    fun saveBrokerAccountId(accId: String) = prefs.edit().putString("broker_account_id", accId).apply()
+
+    fun getBrokerPassword(): String = getDecryptedString("broker_password")
+    fun saveBrokerPassword(password: String) = saveEncryptedString("broker_password", password)
+
+    fun getBrokerGatewayUrl(): String = prefs.getString("broker_gateway_url", "") ?: ""
+    fun saveBrokerGatewayUrl(url: String) = prefs.edit().putString("broker_gateway_url", url).apply()
+
+    fun getBrokerApiKey(): String = getDecryptedString("broker_api_key")
+    fun saveBrokerApiKey(apiKey: String) = saveEncryptedString("broker_api_key", apiKey)
+
     fun clearAllSecrets() {
         prefs.edit().clear().apply()
     }

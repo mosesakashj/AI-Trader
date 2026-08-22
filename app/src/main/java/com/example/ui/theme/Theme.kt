@@ -1,33 +1,35 @@
 package com.example.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val TerminalColorScheme = darkColorScheme(
-    primary = CyanLight,
-    onPrimary = Color(0xFF00363F),
-    primaryContainer = Color(0xFF004E5B),
-    onPrimaryContainer = Color(0xFFBCEBFA),
+private val CleanMinimalismColorScheme = lightColorScheme(
+    primary = PrimaryBlue,
+    onPrimary = Color.White,
+    primaryContainer = PrimaryBlueContainer,
+    onPrimaryContainer = OnPrimaryBlueContainer,
     secondary = EmeraldGain,
-    onSecondary = Color(0xFF003823),
-    secondaryContainer = Color(0xFF005234),
-    onSecondaryContainer = Color(0xFFA6F2C8),
+    onSecondary = Color.White,
+    secondaryContainer = EmeraldContainer,
+    onSecondaryContainer = EmeraldDark,
     tertiary = GoldHero,
-    onTertiary = Color(0xFF452B00),
-    tertiaryContainer = Color(0xFF633F00),
-    onTertiaryContainer = Color(0xFFFFDDB3),
+    onTertiary = Color.White,
+    tertiaryContainer = GoldContainer,
+    onTertiaryContainer = GoldHero,
     error = CrimsonLoss,
     onError = Color.White,
+    errorContainer = CrimsonContainer,
+    onErrorContainer = CrimsonDark,
     background = BackgroundDark,
     onBackground = TextPrimary,
     surface = SurfaceDark,
     onSurface = TextPrimary,
     surfaceVariant = SurfaceVariantDark,
     onSurfaceVariant = TextSecondary,
-    outline = CardBorderDark
+    outline = CardBorderDark,
+    outlineVariant = CardBorderSubtle
 )
 
 @Composable
@@ -35,7 +37,7 @@ fun EdgeTraderTheme(
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = TerminalColorScheme,
+        colorScheme = CleanMinimalismColorScheme,
         typography = Typography,
         content = content
     )
@@ -44,10 +46,11 @@ fun EdgeTraderTheme(
 // Kept for backward compatibility
 @Composable
 fun MyApplicationTheme(
-    darkTheme: Boolean = true,
+    darkTheme: Boolean = false,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     EdgeTraderTheme(content = content)
 }
+
 
