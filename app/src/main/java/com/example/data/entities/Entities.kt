@@ -173,9 +173,8 @@ data class HeartbeatEntity(
     val details: String = ""
 )
 
-@Entity(tableName = "watchlist")
 data class WatchlistItemEntity(
-    @PrimaryKey val symbol: String,
+    val symbol: String,
     val displayName: String,
     val assetType: String,
     val addedAt: Long = System.currentTimeMillis(),

@@ -278,6 +278,92 @@ class FirestoreRepository(private val context: Context) {
             .set(FirestoreMapper.heartbeatToMap(heartbeat)).await()
     }
 
+    // ─── Watchlist ──────────────────────────────────────────────────────────
+
+    val watchlistFlow: Flow<List<WatchlistItemEntity>> = callbackFlow {
+        val registration = userCollection("watchlist")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val items = snapshot?.documents?.mapNotNull { doc ->
+                    doc.data?.let { map ->
+                        WatchlistItemEntity(
+                            symbol = map["symbol"] as? String ?: "",
+                            displayName = map["displayName"] as? String ?: "",
+                            assetType = map["assetType"] as? String ?: "FOREX",
+                            addedAt = (map["addedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+                            isMonitoring = map["isMonitoring"] as? Boolean ?: true,
+                            alertOnSignal = map["alertOnSignal"] as? Boolean ?: true,
+                            alertOnSessionOpen = map["alertOnSessionOpen"] as? Boolean ?: false,
+                            notes = map["notes"] as? String ?: ""
+                        )
+                    }
+                } ?: emptyList()
+                trySend(items)
+            }
+        listeners.add(registration)
+        awaitClose { registration.remove() }
+    }
+
+    suspend fun getWatchlist(): List<WatchlistItemEntity> {
+        val snapshot = userCollection("watchlist").get().await()
+        return snapshot.documents.mapNotNull { doc ->
+            doc.data?.let { map ->
+                WatchlistItemEntity(
+                    symbol = map["symbol"] as? String ?: "",
+                    displayName = map["displayName"] as? String ?: "",
+                    assetType = map["assetType"] as? String ?: "FOREX",
+                    addedAt = (map["addedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+                    isMonitoring = map["isMonitoring"] as? Boolean ?: true,
+                    alertOnSignal = map["alertOnSignal"] as? Boolean ?: true,
+                    alertOnSessionOpen = map["alertOnSessionOpen"] as? Boolean ?: false,
+                    notes = map["notes"] as? String ?: ""
+                )
+            }
+        }
+    }
+
+    suspend fun addToWatchlist(item: WatchlistItemEntity) {
+        val data = mapOf(
+            "symbol" to item.symbol,
+            "displayName" to item.displayName,
+            "assetType" to item.assetType,
+            "addedAt" to item.addedAt,
+            "isMonitoring" to item.isMonitoring,
+            "alertOnSignal" to item.alertOnSignal,
+            "alertOnSessionOpen" to item.alertOnSessionOpen,
+            "notes" to item.notes
+        )
+        userCollection("watchlist").document(item.symbol).set(data).await()
+    }
+
+    suspend fun removeFromWatchlist(symbol: String) {
+        userCollection("watchlist").document(symbol).delete().await()
+    }
+
+    suspend fun getWatchlistItem(symbol: String): WatchlistItemEntity? {
+        val snapshot = userCollection("watchlist").document(symbol).get().await()
+        return snapshot.data?.let { map ->
+            WatchlistItemEntity(
+                symbol = map["symbol"] as? String ?: "",
+                displayName = map["displayName"] as? String ?: "",
+                assetType = map["assetType"] as? String ?: "FOREX",
+                addedAt = (map["addedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+                isMonitoring = map["isMonitoring"] as? Boolean ?: true,
+                alertOnSignal = map["alertOnSignal"] as? Boolean ?: true,
+                alertOnSessionOpen = map["alertOnSessionOpen"] as? Boolean ?: false,
+                notes = map["notes"] as? String ?: ""
+            )
+        }
+    }
+
+    suspend fun watchlistCount(): Int {
+        val snapshot = userCollection("watchlist").get().await()
+        return snapshot.size()
+    }
+
     // ─── History Clear ─────────────────────────────────────────────────────
 
     suspend fun clearHistory() {

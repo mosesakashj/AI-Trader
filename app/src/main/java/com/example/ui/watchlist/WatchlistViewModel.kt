@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.entities.WatchlistItemEntity
-import com.example.data.repositories.TradingRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.model.*
 import com.example.trading.TradingEngine
@@ -35,7 +35,7 @@ data class WatchlistUiItem(
 @HiltViewModel
 class WatchlistViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val repository: TradingRepository,
+    private val repository: FirestoreRepository,
     private val engine: TradingEngine
 ) : ViewModel() {
 
