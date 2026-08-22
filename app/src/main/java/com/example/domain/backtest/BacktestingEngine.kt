@@ -73,6 +73,44 @@ data class WalkForwardResult(
     val robustnessScore: Double
 )
 
+data class MonteCarloResult(
+    val simulationCount: Int,
+    val percentiles: Map<Int, Double>, // percentile -> ending equity
+    val profitPercentiles: Map<Int, Double>,
+    val drawdownPercentiles: Map<Int, Double>,
+    val worstCase: MonteCarloScenario,
+    val bestCase: MonteCarloScenario,
+    val medianCase: MonteCarloScenario,
+    val probabilityOfProfit: Double,
+    val probabilityOfRuin: Double, // equity < 50% initial
+    val averageMaxDrawdown: Double,
+    val averageReturn: Double,
+    val sharpeRatio: Double,
+    val allSimulations: List<MonteCarloSimulation>
+)
+
+data class MonteCarloSimulation(
+    val simulationIndex: Int,
+    val trades: List<Trade>,
+    val endingEquity: Double,
+    val totalReturn: Double,
+    val maxDrawdown: Double,
+    val maxDrawdownPercent: Double,
+    val winRate: Double,
+    val profitFactor: Double,
+    val equityCurve: List<Pair<Long, Double>>
+)
+
+data class MonteCarloScenario(
+    val simulationIndex: Int,
+    val endingEquity: Double,
+    val totalReturn: Double,
+    val maxDrawdownPercent: Double,
+    val totalTrades: Int,
+    val winRate: Double,
+    val equityCurve: List<Pair<Long, Double>>
+)
+
 class BacktestingEngine(
     private var strategy: TradingStrategy = TradingStrategy(),
     private val riskManager: RiskManager = RiskManager()
@@ -456,6 +494,218 @@ class BacktestingEngine(
             validationResult = validation,
             outOfSampleResult = oos,
             robustnessScore = robustness
+        )
+    }
+
+    /**
+     * Monte Carlo Simulation - Resamples trades to estimate strategy robustness.
+     * Runs N simulations by randomly sampling from the trade distribution.
+     */
+    fun runMonteCarlo(
+        candles: List<Candle>,
+        symbolConfig: SymbolConfig,
+        initialBalance: Double = 10000.0,
+        riskPercent: Double = 0.25,
+        simulationCount: Int = 500
+    ): MonteCarloResult {
+        // First run a baseline backtest to get the trade distribution
+        val baselineResult = runBacktest(candles, symbolConfig, initialBalance, riskPercent)
+        val baselineTrades = baselineResult.trades
+
+        if (baselineTrades.size < 10) {
+            return MonteCarloResult(
+                simulationCount = 0,
+                percentiles = emptyMap(),
+                profitPercentiles = emptyMap(),
+                drawdownPercentiles = emptyMap(),
+                worstCase = MonteCarloScenario(0, initialBalance, 0.0, 0.0, 0, 0.0, emptyList()),
+                bestCase = MonteCarloScenario(0, initialBalance, 0.0, 0.0, 0, 0.0, emptyList()),
+                medianCase = MonteCarloScenario(0, initialBalance, 0.0, 0.0, 0, 0.0, emptyList()),
+                probabilityOfProfit = 0.0,
+                probabilityOfRuin = 0.0,
+                averageMaxDrawdown = 0.0,
+                averageReturn = 0.0,
+                sharpeRatio = 0.0,
+                allSimulations = emptyList()
+            )
+        }
+
+        val winTrades = baselineTrades.filter { it.profit > 0 }
+        val lossTrades = baselineTrades.filter { it.profit < 0 }
+        val avgTradeCount = baselineTrades.size
+        val winRate = baselineResult.winRate / 100.0
+
+        val simulations = mutableListOf<MonteCarloSimulation>()
+        val random = java.util.Random()
+
+        for (sim in 0 until simulationCount) {
+            // Resample trades with replacement
+            val simTrades = mutableListOf<Trade>()
+            var balance = initialBalance
+            var peakBalance = initialBalance
+            var maxDrawdownAmount = 0.0
+            var maxDrawdownPercent = 0.0
+            val equityCurve = mutableListOf<Pair<Long, Double>>()
+            equityCurve.add(candles.first().openTime to balance)
+
+            // Use bootstrap resampling - randomly pick from win/loss pools based on win rate
+            val simTradeCount = max(1, (avgTradeCount * (0.5 + random.nextDouble())).toInt())
+
+            for (i in 0 until simTradeCount) {
+                val isWin = random.nextDouble() < winRate
+                val sourcePool = if (isWin) winTrades else lossTrades
+
+                if (sourcePool.isEmpty()) continue
+
+                val templateTrade = sourcePool.random()
+                val trade = Trade(
+                    id = "MC_${sim}_$i",
+                    symbol = symbolConfig.symbol,
+                    direction = templateTrade.direction,
+                    volume = templateTrade.volume,
+                    entryPrice = templateTrade.entryPrice,
+                    stopLoss = templateTrade.stopLoss,
+                    takeProfit = templateTrade.takeProfit,
+                    riskAmount = templateTrade.riskAmount,
+                    riskPercent = templateTrade.riskPercent,
+                    rr = templateTrade.rr,
+                    openedAt = candles[random.nextInt(candles.size)].openTime,
+                    closedAt = candles[random.nextInt(candles.size)].openTime,
+                    closePrice = if (isWin) templateTrade.takeProfit else templateTrade.stopLoss,
+                    profit = templateTrade.profit,
+                    profitR = templateTrade.profitR,
+                    status = TradeStatus.CLOSED,
+                    closeReason = if (isWin) CloseReason.TAKE_PROFIT else CloseReason.STOP_LOSS
+                )
+
+                simTrades.add(trade)
+                balance += trade.profit
+                peakBalance = max(peakBalance, balance)
+                val dd = peakBalance - balance
+                val ddPct = if (peakBalance > 0) (dd / peakBalance) * 100.0 else 0.0
+                maxDrawdownAmount = max(maxDrawdownAmount, dd)
+                maxDrawdownPercent = max(maxDrawdownPercent, ddPct)
+                equityCurve.add(trade.closedAt!! to balance)
+            }
+
+            val totalReturn = balance - initialBalance
+            val returnPct = (totalReturn / initialBalance) * 100.0
+            val simWinRate = if (simTrades.isNotEmpty()) simTrades.count { it.profit > 0 }.toDouble() / simTrades.size * 100.0 else 0.0
+            val simGrossProfit = simTrades.filter { it.profit > 0 }.sumOf { it.profit }
+            val simGrossLoss = abs(simTrades.filter { it.profit < 0 }.sumOf { it.profit })
+            val simProfitFactor = if (simGrossLoss > 0) simGrossProfit / simGrossLoss else if (simGrossProfit > 0) 9.99 else 0.0
+
+            val simReturns = simTrades.map { it.profit / initialBalance }
+            val simAvgReturn = if (simReturns.isNotEmpty()) simReturns.average() else 0.0
+            val simStdDev = if (simReturns.size > 1) {
+                val variance = simReturns.map { (it - simAvgReturn) * (it - simAvgReturn) }.average()
+                sqrt(variance)
+            } else 0.0
+            val simSharpe = if (simStdDev > 0) (simAvgReturn / simStdDev) * sqrt(252.0) else 0.0
+
+            simulations.add(MonteCarloSimulation(
+                simulationIndex = sim,
+                trades = simTrades,
+                endingEquity = balance,
+                totalReturn = returnPct,
+                maxDrawdown = maxDrawdownAmount,
+                maxDrawdownPercent = maxDrawdownPercent,
+                winRate = simWinRate,
+                profitFactor = simProfitFactor,
+                equityCurve = equityCurve
+            ))
+        }
+
+        // Calculate percentiles
+        val sortedByEquity = simulations.sortedBy { it.endingEquity }
+        val sortedByReturn = simulations.sortedBy { it.totalReturn }
+        val sortedByDrawdown = simulations.sortedBy { it.maxDrawdownPercent }
+
+        val percentiles = mapOf(
+            1 to sortedByEquity[simulationCount / 100].endingEquity,
+            5 to sortedByEquity[simulationCount * 5 / 100].endingEquity,
+            10 to sortedByEquity[simulationCount * 10 / 100].endingEquity,
+            25 to sortedByEquity[simulationCount / 4].endingEquity,
+            50 to sortedByEquity[simulationCount / 2].endingEquity,
+            75 to sortedByEquity[simulationCount * 3 / 4].endingEquity,
+            90 to sortedByEquity[simulationCount * 9 / 10].endingEquity,
+            95 to sortedByEquity[simulationCount * 95 / 100].endingEquity,
+            99 to sortedByEquity[simulationCount * 99 / 100].endingEquity
+        )
+
+        val profitPercentiles = mapOf(
+            5 to sortedByReturn[simulationCount * 5 / 100].totalReturn,
+            25 to sortedByReturn[simulationCount / 4].totalReturn,
+            50 to sortedByReturn[simulationCount / 2].totalReturn,
+            75 to sortedByReturn[simulationCount * 3 / 4].totalReturn,
+            95 to sortedByReturn[simulationCount * 95 / 100].totalReturn
+        )
+
+        val drawdownPercentiles = mapOf(
+            5 to sortedByDrawdown[simulationCount * 5 / 100].maxDrawdownPercent,
+            25 to sortedByDrawdown[simulationCount / 4].maxDrawdownPercent,
+            50 to sortedByDrawdown[simulationCount / 2].maxDrawdownPercent,
+            75 to sortedByDrawdown[simulationCount * 3 / 4].maxDrawdownPercent,
+            95 to sortedByDrawdown[simulationCount * 95 / 100].maxDrawdownPercent
+        )
+
+        val worstCase = sortedByEquity.first()
+        val bestCase = sortedByEquity.last()
+        val medianCase = sortedByEquity[simulationCount / 2]
+
+        val probabilityOfProfit = simulations.count { it.endingEquity > initialBalance }.toDouble() / simulationCount * 100.0
+        val probabilityOfRuin = simulations.count { it.endingEquity < initialBalance * 0.5 }.toDouble() / simulationCount * 100.0
+        val averageMaxDrawdown = simulations.averageOf { it.maxDrawdownPercent }
+        val averageReturn = simulations.averageOf { it.totalReturn }
+
+        val allReturns = simulations.flatMap { sim ->
+            sim.trades.map { it.profit / initialBalance }
+        }
+        val mcAvgReturn = if (allReturns.isNotEmpty()) allReturns.average() else 0.0
+        val mcStdDev = if (allReturns.size > 1) {
+            val variance = allReturns.map { (it - mcAvgReturn) * (it - mcAvgReturn) }.average()
+            sqrt(variance)
+        } else 0.0
+        val mcSharpe = if (mcStdDev > 0) (mcAvgReturn / mcStdDev) * sqrt(252.0) else 0.0
+
+        return MonteCarloResult(
+            simulationCount = simulationCount,
+            percentiles = percentiles,
+            profitPercentiles = profitPercentiles,
+            drawdownPercentiles = drawdownPercentiles,
+            worstCase = MonteCarloScenario(
+                simulationIndex = worstCase.simulationIndex,
+                endingEquity = worstCase.endingEquity,
+                totalReturn = worstCase.totalReturn,
+                maxDrawdownPercent = worstCase.maxDrawdownPercent,
+                totalTrades = worstCase.trades.size,
+                winRate = worstCase.winRate,
+                equityCurve = worstCase.equityCurve
+            ),
+            bestCase = MonteCarloScenario(
+                simulationIndex = bestCase.simulationIndex,
+                endingEquity = bestCase.endingEquity,
+                totalReturn = bestCase.totalReturn,
+                maxDrawdownPercent = bestCase.maxDrawdownPercent,
+                totalTrades = bestCase.trades.size,
+                winRate = bestCase.winRate,
+                equityCurve = bestCase.equityCurve
+            ),
+            medianCase = MonteCarloScenario(
+                simulationIndex = medianCase.simulationIndex,
+                endingEquity = medianCase.endingEquity,
+                totalReturn = medianCase.totalReturn,
+                maxDrawdownPercent = medianCase.maxDrawdownPercent,
+                totalTrades = medianCase.trades.size,
+                winRate = medianCase.winRate,
+                equityCurve = medianCase.equityCurve
+            ),
+            probabilityOfProfit = probabilityOfProfit,
+            probabilityOfRuin = probabilityOfRuin,
+            averageMaxDrawdown = averageMaxDrawdown,
+            averageReturn = averageReturn,
+            sharpeRatio = mcSharpe,
+            allSimulations = simulations
         )
     }
 

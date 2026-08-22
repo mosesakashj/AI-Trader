@@ -48,8 +48,9 @@ fun BacktestScreen() {
     var portfolioResult by remember { mutableStateOf<PortfolioBacktestResult?>(null) }
     var optimizationResults by remember { mutableStateOf<List<OptimizationResult>?>(null) }
     var walkForwardResult by remember { mutableStateOf<WalkForwardResult?>(null) }
+    var monteCarloResult by remember { mutableStateOf<MonteCarloResult?>(null) }
 
-    // 0: Single Asset, 1: Portfolio (All Pairs), 2: Parameter Optimizer, 3: Walk-Forward
+    // 0: Single Asset, 1: Portfolio (All Pairs), 2: Parameter Optimizer, 3: Walk-Forward, 4: Monte Carlo
     var testMode by remember { mutableStateOf(0) }
 
     val marketDataProvider = remember { EdgeTraderApp.instance.tradingEngine }
@@ -79,7 +80,8 @@ fun BacktestScreen() {
                     0 to "Single Asset",
                     1 to "Portfolio Mode",
                     2 to "Optimizer Grid",
-                    3 to "Walk-Forward"
+                    3 to "Walk-Forward",
+                    4 to "Monte Carlo"
                 ).forEach { (mode, title) ->
                     val isSelected = testMode == mode
                     FilterChip(

@@ -1074,3 +1074,91 @@ if (selectedProviderId == AiProviderType.NVIDIA) {
         )
     }
 }
+
+@Composable
+private fun renderProviderConfig(
+    providerName: String,
+    apiKey: String,
+    onApiKeyChange: (String) -> Unit,
+    keyPrefix: String,
+    saveAction: () -> Unit,
+    testProviderId: String,
+    aiManager: com.example.ai.AiManager,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    aiTestResult: String?,
+    isTestingAi: Boolean,
+    onTestResultChange: (String?) -> Unit,
+    onTestingChange: (Boolean) -> Unit
+) {
+    HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 4.dp))
+
+    Text("$providerName Configuration", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+
+    OutlinedTextField(
+        value = apiKey,
+        onValueChange = onApiKeyChange,
+        label = { Text("$providerName API Key") },
+        visualTransformation = PasswordVisualTransformation(),
+        placeholder = { Text("$keyPrefixxxxxxxxxxxxxxxxxxxxxxxxx") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        isError = apiKey.isNotBlank() && !apiKey.startsWith(keyPrefix)
+    )
+
+    if (apiKey.isNotBlank() && !apiKey.startsWith(keyPrefix)) {
+        Text("API key should start with '$keyPrefix'", style = MaterialTheme.typography.labelSmall, color = CrimsonLoss)
+    }
+
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(
+            onClick = {
+                saveAction()
+                aiManager.refreshProviders()
+                onTestResultChange("✅ $providerName API key saved! Provider list refreshed.")
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("Save API Key", fontWeight = FontWeight.Bold, color = Color.White)
+        }
+
+        OutlinedButton(
+            onClick = {
+                onTestingChange(true)
+                saveAction()
+                aiManager.refreshProviders()
+
+                coroutineScope.launch {
+                    val provider = aiManager.providers.value.firstOrNull { it.config.id == testProviderId }
+                    provider?.testConnection()?.onSuccess { msg ->
+                        onTestResultChange("✅ $msg")
+                    }?.onFailure { e ->
+                        onTestResultChange("❌ Connection failed: ${e.message}")
+                    }
+                    onTestingChange(false)
+                }
+            },
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            if (isTestingAi) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = PrimaryBlue, strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Testing...", color = PrimaryBlue)
+            } else {
+                Icon(Icons.Default.Link, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Test Connection", color = PrimaryBlue)
+            }
+        }
+    }
+
+    if (aiTestResult != null) {
+        Text(
+            aiTestResult!!,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (aiTestResult!!.startsWith("✅")) EmeraldGain else CrimsonLoss
+        )
+    }
+}

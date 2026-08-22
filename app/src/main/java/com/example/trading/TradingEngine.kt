@@ -18,6 +18,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.minOf
 
 class TradingEngine(
     private val repository: TradingRepository,
@@ -54,9 +55,12 @@ class TradingEngine(
     val consecutiveLosses: StateFlow<Int> = _consecutiveLosses.asStateFlow()
 
     private var quoteStreamJob: Job? = null
+    private var reconciliationJob: Job? = null
 
     private var activeBroker: BrokerAdapter = brokerFactory(TradingMode.PAPER)
     private var positionReconciler = PositionReconciler(repository, activeBroker)
+
+    private val reconciliationIntervalMillis = 300_000L // 5 minutes
 
     private val symbolConfigs = ConcurrentHashMap<String, SymbolConfig>().apply {
         SymbolCatalog.ALL_SYMBOLS.forEach { put(it.symbol, it) }
@@ -160,16 +164,35 @@ class TradingEngine(
 
                 _connectionState.value = ConnectionState.ONLINE
 
-                // Position reconciliation
+                // Position reconciliation with auto-repair
                 stateMachine.transitionTo(StateMachineState.SYNCING, "Reconciling positions")
-                val reconciliation = positionReconciler.reconcile()
-                if (reconciliation is ReconciliationResult.Discrepancy) {
-                    stateMachine.forceState(
-                        StateMachineState.SAFE_MODE,
-                        "Position mismatch detected on startup: ${reconciliation.message}"
-                    )
-                    notificationManager.notifySafeMode(reconciliation.message)
-                    return@launch
+                val reconciliation = positionReconciler.reconcileAndRepair()
+                when (reconciliation) {
+                    is ReconciliationResult.Repaired -> {
+                        repository.logEvent(
+                            LogLevel.INFO,
+                            "TradingEngine",
+                            "STARTUP_RECONCILIATION_REPAIRED",
+                            "Auto-repaired position mismatch on startup: ${reconciliation.message}"
+                        )
+                    }
+                    is ReconciliationResult.Discrepancy -> {
+                        // Only go to SAFE MODE if auto-repair failed or was not possible
+                        stateMachine.forceState(
+                            StateMachineState.SAFE_MODE,
+                            "Position mismatch detected on startup (auto-repair failed): ${reconciliation.message}"
+                        )
+                        notificationManager.notifySafeMode(reconciliation.message)
+                        return@launch
+                    }
+                    is ReconciliationResult.Error -> {
+                        stateMachine.forceState(
+                            StateMachineState.ERROR,
+                            "Reconciliation error on startup: ${reconciliation.error}"
+                        )
+                        return@launch
+                    }
+                    else -> { /* InSync - proceed normally */ }
                 }
 
                 val openPositions = repository.getOpenPositions()
@@ -181,6 +204,9 @@ class TradingEngine(
                     symbols = symbolConfigs.keys.toList(),
                     risk = config.defaultRiskPercent
                 )
+
+                // Start periodic position reconciliation
+                startPeriodicReconciliation()
 
                 // Keep engine job alive while bot is active
                 while (isActive) {
@@ -195,6 +221,76 @@ class TradingEngine(
                 repository.logEvent(LogLevel.CRITICAL, "TradingEngine", "ENGINE_EXCEPTION", "Crash: ${e.localizedMessage}")
             }
         }
+    }
+
+    private fun startPeriodicReconciliation() {
+        if (reconciliationJob?.isActive == true) return
+        reconciliationJob = scope.launch {
+            while (isActive) {
+                delay(reconciliationIntervalMillis)
+                if (!isActive) break
+                try {
+                    val reconciliation = positionReconciler.reconcileAndRepair()
+                    when (reconciliation) {
+                        is ReconciliationResult.Repaired -> {
+                            repository.logEvent(
+                                LogLevel.INFO,
+                                "TradingEngine",
+                                "PERIODIC_RECONCILIATION_REPAIRED",
+                                "Periodic reconciliation auto-repaired: ${reconciliation.message}"
+                            )
+                            notificationManager.notifyBotRestarted("Periodic reconciliation auto-repaired position mismatch", 0)
+                        }
+                        is ReconciliationResult.Discrepancy -> {
+                            repository.logEvent(
+                                LogLevel.CRITICAL,
+                                "TradingEngine",
+                                "PERIODIC_RECONCILIATION_MISMATCH",
+                                "Periodic reconciliation found unrepairable mismatch: ${reconciliation.message}"
+                            )
+                            // Only go to SAFE MODE if we have positions and can't repair
+                            val openPositions = repository.getOpenPositions()
+                            if (openPositions.isNotEmpty()) {
+                                stateMachine.forceState(
+                                    StateMachineState.SAFE_MODE,
+                                    "Periodic reconciliation found unrepairable position mismatch: ${reconciliation.message}"
+                                )
+                                notificationManager.notifySafeMode("Periodic reconciliation: ${reconciliation.message}")
+                                break
+                            }
+                        }
+                        is ReconciliationResult.Error -> {
+                            repository.logEvent(
+                                LogLevel.ERROR,
+                                "TradingEngine",
+                                "PERIODIC_RECONCILIATION_ERROR",
+                                "Periodic reconciliation error: ${reconciliation.error}"
+                            )
+                        }
+                        else -> { /* InSync - log periodically */
+                            repository.logEvent(
+                                LogLevel.DEBUG,
+                                "TradingEngine",
+                                "PERIODIC_RECONCILIATION_OK",
+                                "Periodic reconciliation: All positions in sync"
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    repository.logEvent(
+                        LogLevel.ERROR,
+                        "TradingEngine",
+                        "PERIODIC_RECONCILIATION_EXCEPTION",
+                        "Periodic reconciliation failed: ${e.localizedMessage}"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopPeriodicReconciliation() {
+        reconciliationJob?.cancel()
+        reconciliationJob = null
     }
 
     fun stop(reason: String = "User requested stop") {
