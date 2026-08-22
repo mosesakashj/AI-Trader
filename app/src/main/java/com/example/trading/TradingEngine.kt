@@ -95,6 +95,208 @@ class TradingEngine(
                 maximumAtr = 3000.0
             )
         )
+        // Major Forex Pairs
+        put(
+            "EURUSD",
+            SymbolConfig(
+                symbol = "EURUSD",
+                displayName = "EUR/USD",
+                brokerSymbol = "EURUSD",
+                assetType = AssetType.FOREX,
+                digits = 5,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.00001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.0005,
+                spreadLimit = 0.00025,
+                minimumAtr = 0.0002,
+                maximumAtr = 0.02
+            )
+        )
+        put(
+            "GBPUSD",
+            SymbolConfig(
+                symbol = "GBPUSD",
+                displayName = "GBP/USD",
+                brokerSymbol = "GBPUSD",
+                assetType = AssetType.FOREX,
+                digits = 5,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.00001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.0005,
+                spreadLimit = 0.00030,
+                minimumAtr = 0.0002,
+                maximumAtr = 0.02
+            )
+        )
+        put(
+            "USDJPY",
+            SymbolConfig(
+                symbol = "USDJPY",
+                displayName = "USD/JPY",
+                brokerSymbol = "USDJPY",
+                assetType = AssetType.FOREX,
+                digits = 3,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.05,
+                spreadLimit = 0.03,
+                minimumAtr = 0.02,
+                maximumAtr = 2.0
+            )
+        )
+        put(
+            "AUDUSD",
+            SymbolConfig(
+                symbol = "AUDUSD",
+                displayName = "AUD/USD",
+                brokerSymbol = "AUDUSD",
+                assetType = AssetType.FOREX,
+                digits = 5,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.00001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.0005,
+                spreadLimit = 0.00030,
+                minimumAtr = 0.0002,
+                maximumAtr = 0.02
+            )
+        )
+        put(
+            "USDCAD",
+            SymbolConfig(
+                symbol = "USDCAD",
+                displayName = "USD/CAD",
+                brokerSymbol = "USDCAD",
+                assetType = AssetType.FOREX,
+                digits = 5,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.00001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.0005,
+                spreadLimit = 0.00030,
+                minimumAtr = 0.0002,
+                maximumAtr = 0.02
+            )
+        )
+        put(
+            "USDCHF",
+            SymbolConfig(
+                symbol = "USDCHF",
+                displayName = "USD/CHF",
+                brokerSymbol = "USDCHF",
+                assetType = AssetType.FOREX,
+                digits = 5,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.00001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.0005,
+                spreadLimit = 0.00030,
+                minimumAtr = 0.0002,
+                maximumAtr = 0.02
+            )
+        )
+        put(
+            "NZDUSD",
+            SymbolConfig(
+                symbol = "NZDUSD",
+                displayName = "NZD/USD",
+                brokerSymbol = "NZDUSD",
+                assetType = AssetType.FOREX,
+                digits = 5,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.00001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.0005,
+                spreadLimit = 0.00035,
+                minimumAtr = 0.0002,
+                maximumAtr = 0.02
+            )
+        )
+        // Cross Pairs
+        put(
+            "EURGBP",
+            SymbolConfig(
+                symbol = "EURGBP",
+                displayName = "EUR/GBP",
+                brokerSymbol = "EURGBP",
+                assetType = AssetType.FOREX,
+                digits = 5,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.00001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.0005,
+                spreadLimit = 0.00035,
+                minimumAtr = 0.0002,
+                maximumAtr = 0.015
+            )
+        )
+        put(
+            "EURJPY",
+            SymbolConfig(
+                symbol = "EURJPY",
+                displayName = "EUR/JPY",
+                brokerSymbol = "EURJPY",
+                assetType = AssetType.FOREX,
+                digits = 3,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.05,
+                spreadLimit = 0.04,
+                minimumAtr = 0.02,
+                maximumAtr = 2.0
+            )
+        )
+        put(
+            "GBPJPY",
+            SymbolConfig(
+                symbol = "GBPJPY",
+                displayName = "GBP/JPY",
+                brokerSymbol = "GBPJPY",
+                assetType = AssetType.FOREX,
+                digits = 3,
+                contractSize = 100000.0,
+                minLot = 0.01,
+                maxLot = 10.0,
+                lotStep = 0.01,
+                tickSize = 0.001,
+                tickValue = 10.0,
+                minimumStopDistance = 0.05,
+                spreadLimit = 0.05,
+                minimumAtr = 0.02,
+                maximumAtr = 3.0
+            )
+        )
     }
 
     private val candlesMap = ConcurrentHashMap<String, MutableList<Candle>>()
@@ -118,10 +320,27 @@ class TradingEngine(
 
         updateConfigurationsFromEntity(config)
 
-        // Seed historical candles for analysis
-        symbolConfigs.keys.forEach { symbol ->
+        // Determine enabled symbols from config
+        val enabledSymbols = mutableListOf<String>()
+        if (config.xauusdEnabled) enabledSymbols.add("XAUUSD")
+        if (config.btcusdEnabled) enabledSymbols.add("BTCUSD")
+        if (config.eurusdEnabled) enabledSymbols.add("EURUSD")
+        if (config.gbpusdEnabled) enabledSymbols.add("GBPUSD")
+        if (config.usdjpyEnabled) enabledSymbols.add("USDJPY")
+        if (config.audusdEnabled) enabledSymbols.add("AUDUSD")
+        if (config.usdcadEnabled) enabledSymbols.add("USDCAD")
+        if (config.usdchfEnabled) enabledSymbols.add("USDCHF")
+        if (config.nzdusdEnabled) enabledSymbols.add("NZDUSD")
+        if (config.eurgbpEnabled) enabledSymbols.add("EURGBP")
+        if (config.eurjpyEnabled) enabledSymbols.add("EURJPY")
+        if (config.gbpjpyEnabled) enabledSymbols.add("GBPJPY")
+
+        // Seed historical candles for enabled symbols only
+        enabledSymbols.forEach { symbol ->
             val historical = marketDataProvider.getHistoricalCandles(symbol, Timeframe.M15, 80)
             candlesMap[symbol] = historical.toMutableList()
+            // Subscribe to market data for this symbol
+            marketDataProvider.subscribe(symbol)
         }
 
         if (config.isBotEnabled && !config.emergencyStop && !config.safeMode) {

@@ -13,10 +13,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.EdgeTraderApp
+import com.example.domain.model.AssetType
 import com.example.domain.model.TradingMode
 import com.example.notifications.TelegramNotifier
 import com.example.ui.components.LiveModeDisclaimerDialog
@@ -60,6 +62,33 @@ fun SettingsScreen(
     var telegramChatId by remember { mutableStateOf(secureStorage.getTelegramChatId()) }
     var testResult by remember { mutableStateOf<String?>(null) }
     var isTestingTelegram by remember { mutableStateOf(false) }
+
+    // Monitored Pairs State
+    val availableSymbols = remember {
+        listOf(
+            "XAUUSD" to "Gold (Spot)",
+            "BTCUSD" to "Bitcoin (Spot)",
+            "EURUSD" to "EUR/USD",
+            "GBPUSD" to "GBP/USD",
+            "USDJPY" to "USD/JPY",
+            "AUDUSD" to "AUD/USD",
+            "USDCAD" to "USD/CAD",
+            "USDCHF" to "USD/CHF",
+            "NZDUSD" to "NZD/USD",
+            "EURGBP" to "EUR/GBP",
+            "EURJPY" to "EUR/JPY",
+            "GBPJPY" to "GBP/JPY"
+        )
+    }
+    var monitoredPairs by remember(config) {
+        mutableStateOf(config?.let { 
+            listOf(
+                if (it.xauusdEnabled) "XAUUSD" else null,
+                if (it.btcusdEnabled) "BTCUSD" else null
+            ).filterNotNull() 
+        } ?: listOf("XAUUSD", "BTCUSD"))
+    }
+    var monitoredPairsSaveResult by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -430,6 +459,205 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
+                }
+            }
+        }
+
+        // Monitored Trading Pairs Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth().testTag("monitored_pairs_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            color = CyanContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Visibility, contentDescription = null, tint = CyanLight, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column {
+                            Text("Monitored Trading Pairs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            Text("Select which symbols the engine analyzes for trade signals", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                        }
+                    }
+
+                    Text("Commodities & Crypto:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(0.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(availableSymbols.take(2)) { (symbol, displayName) ->
+                            val isEnabled = monitoredPairs.contains(symbol)
+                            val assetType = when (symbol) {
+                                "XAUUSD" -> AssetType.COMMODITY
+                                "BTCUSD" -> AssetType.CRYPTO
+                                else -> AssetType.FOREX
+                            }
+                            val typeLabel = when (assetType) {
+                                AssetType.COMMODITY -> "Commodity"
+                                AssetType.CRYPTO -> "Crypto"
+                                else -> "Forex"
+                            }
+                            val typeColor = when (assetType) {
+                                AssetType.COMMODITY -> GoldHero
+                                AssetType.CRYPTO -> CyanLight
+                                else -> PrimaryBlue
+                            }
+                            
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp, horizontal = 4.dp)
+                                    .background(if (isEnabled) SurfaceVariantDark else Color.Transparent, RoundedCornerShape(10.dp))
+                            ) {
+                                Checkbox(
+                                    checked = isEnabled,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled) {
+                                            monitoredPairs = monitoredPairs + symbol
+                                        } else {
+                                            monitoredPairs = monitoredPairs.filter { it != symbol }
+                                        }
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = PrimaryBlue,
+                                        uncheckedColor = TextMuted
+                                    ),
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(displayName, fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                        Surface(
+                                            color = typeColor.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(typeLabel, style = MaterialTheme.typography.labelSmall, color = typeColor, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    Text(symbol, style = MaterialTheme.typography.bodySmall, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                                }
+                                Text(if (isEnabled) "MONITORED" else "IGNORED", style = MaterialTheme.typography.labelSmall, color = if (isEnabled) EmeraldGain else TextMuted, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = CardBorderDark, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text("Major Forex Pairs:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(0.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(availableSymbols.drop(2)) { (symbol, displayName) ->
+                            val isEnabled = monitoredPairs.contains(symbol)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp, horizontal = 4.dp)
+                                    .background(if (isEnabled) SurfaceVariantDark else Color.Transparent, RoundedCornerShape(10.dp))
+                            ) {
+                                Checkbox(
+                                    checked = isEnabled,
+                                    onCheckedChange = { enabled ->
+                                        if (enabled) {
+                                            monitoredPairs = monitoredPairs + symbol
+                                        } else {
+                                            monitoredPairs = monitoredPairs.filter { it != symbol }
+                                        }
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = PrimaryBlue,
+                                        uncheckedColor = TextMuted
+                                    ),
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(displayName, fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                                        Surface(
+                                            color = PrimaryBlue.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text("Forex", style = MaterialTheme.typography.labelSmall, color = PrimaryBlue, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    Text(symbol, style = MaterialTheme.typography.bodySmall, color = TextSecondary, fontFamily = FontFamily.Monospace)
+                                }
+                                Text(if (isEnabled) "MONITORED" else "IGNORED", style = MaterialTheme.typography.labelSmall, color = if (isEnabled) EmeraldGain else TextMuted, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val curr = repository.getOrCreateConfig()
+                                    val newConfig = curr.copy(
+                                        xauusdEnabled = monitoredPairs.contains("XAUUSD"),
+                                        btcusdEnabled = monitoredPairs.contains("BTCUSD"),
+                                        eurusdEnabled = monitoredPairs.contains("EURUSD"),
+                                        gbpusdEnabled = monitoredPairs.contains("GBPUSD"),
+                                        usdjpyEnabled = monitoredPairs.contains("USDJPY"),
+                                        audusdEnabled = monitoredPairs.contains("AUDUSD"),
+                                        usdcadEnabled = monitoredPairs.contains("USDCAD"),
+                                        usdchfEnabled = monitoredPairs.contains("USDCHF"),
+                                        nzdusdEnabled = monitoredPairs.contains("NZDUSD"),
+                                        eurgbpEnabled = monitoredPairs.contains("EURGBP"),
+                                        eurjpyEnabled = monitoredPairs.contains("EURJPY"),
+                                        gbpjpyEnabled = monitoredPairs.contains("GBPJPY")
+                                    )
+                                    repository.updateConfig(newConfig)
+                                    monitoredPairsSaveResult = "✅ Monitored pairs updated! Engine will analyze: ${monitoredPairs.joinToString(", ")}"
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).testTag("save_monitored_pairs_btn")
+                        ) {
+                            Text("Save Monitored Pairs", fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                monitoredPairs = availableSymbols.map { it.first }.toList()
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).testTag("enable_all_pairs_btn")
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Enable All", color = PrimaryBlue)
+                        }
+                    }
+
+                    if (monitoredPairsSaveResult != null) {
+                        Surface(
+                            color = if (monitoredPairsSaveResult!!.startsWith("✅")) EmeraldContainer else GoldContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                monitoredPairsSaveResult!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (monitoredPairsSaveResult!!.startsWith("✅")) EmeraldDark else GoldHero,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
