@@ -54,6 +54,10 @@ fun DashboardScreen(
     val allTrades by viewModel.recentTrades.collectAsStateWithLifecycle()
     val perfStats = remember(allTrades) { computePerformanceStats(allTrades) }
 
+    val brokerAccounts by viewModel.brokerAccounts.collectAsStateWithLifecycle()
+    val activeBrokerAccount by viewModel.activeBrokerAccount.collectAsStateWithLifecycle()
+    var showAccountSwitcher by remember { mutableStateOf(false) }
+
     var showEmergencyDialog by remember { mutableStateOf(false) }
     var showCloseAllDialog by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("ALL") }
@@ -78,6 +82,46 @@ fun DashboardScreen(
         contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // 0. Account Selector Banner
+        if (brokerAccounts.size > 1) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth().testTag("account_selector_card")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showAccountSwitcher = true }
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.AccountBalance, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(
+                                    text = activeBrokerAccount?.label ?: "Broker Account",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "#${activeBrokerAccount?.accountId ?: "---"} \u00b7 ${activeBrokerAccount?.server ?: ""}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Account", tint = PrimaryBlue, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+
         // 1. Status & Control Banner
         item {
             Card(
@@ -625,6 +669,67 @@ fun DashboardScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { showCloseAllDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
+
+    // Account Switcher Dialog
+    if (showAccountSwitcher) {
+        AlertDialog(
+            onDismissRequest = { showAccountSwitcher = false },
+            title = { Text("Switch Broker Account", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Select which Exness account to trade with:", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    brokerAccounts.forEach { account ->
+                        val isActive = account.id == activeBrokerAccount?.id
+                        Surface(
+                            color = if (isActive) PrimaryBlueContainer else SurfaceVariantDark,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (isActive) PrimaryBlue else CardBorderDark),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.switchBrokerAccount(account.id)
+                                    showAccountSwitcher = false
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = account.label.ifBlank { "Account #${account.accountId.takeLast(4)}" },
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isActive) PrimaryBlue else TextPrimary,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "#${account.accountId} \u00b7 ${account.server}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextSecondary,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                if (isActive) {
+                                    Surface(color = PrimaryBlue, shape = RoundedCornerShape(6.dp)) {
+                                        Text("ACTIVE", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                OutlinedButton(onClick = { showAccountSwitcher = false }) {
                     Text("Cancel", color = TextSecondary)
                 }
             },

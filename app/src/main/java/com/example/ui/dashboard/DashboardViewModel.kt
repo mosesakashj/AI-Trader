@@ -42,6 +42,24 @@ class DashboardViewModel(
         emptyList()
     )
 
+    val brokerAccounts: StateFlow<List<BrokerAccount>> = engine.accountManager?.accounts?.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        emptyList()
+    ) ?: MutableStateFlow(emptyList())
+
+    val activeBrokerAccount: StateFlow<BrokerAccount?> = engine.accountManager?.activeAccount?.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        null
+    ) ?: MutableStateFlow(null)
+
+    fun switchBrokerAccount(accountId: String) {
+        viewModelScope.launch {
+            engine.switchBrokerAccount(accountId)
+        }
+    }
+
     fun toggleTradingBot(enable: Boolean) {
         viewModelScope.launch {
             val cfg = repository.getOrCreateConfig()
