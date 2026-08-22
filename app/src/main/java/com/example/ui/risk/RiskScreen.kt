@@ -24,7 +24,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun RiskScreen() {
-    val repository = EdgeTraderApp.instance.repository
+    val repository = EdgeTraderApp.instance.firestoreRepository
     val engine = EdgeTraderApp.instance.tradingEngine
     val config by repository.configFlow.collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()

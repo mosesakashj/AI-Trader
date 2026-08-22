@@ -3,7 +3,7 @@ package com.example.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.data.repositories.TradingRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.TradingMode
 import dagger.hilt.android.AndroidEntryPoint

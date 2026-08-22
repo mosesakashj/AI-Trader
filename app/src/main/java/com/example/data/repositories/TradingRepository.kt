@@ -121,6 +121,18 @@ class TradingRepository(private val db: EdgeTraderDatabase) {
         db.systemEventDao().clearAll()
     }
 
+    val watchlistFlow: Flow<List<WatchlistItemEntity>> = db.watchlistDao().getWatchlistFlow()
+
+    suspend fun getWatchlist(): List<WatchlistItemEntity> = db.watchlistDao().getWatchlist()
+
+    suspend fun addToWatchlist(item: WatchlistItemEntity) = db.watchlistDao().insert(item)
+
+    suspend fun removeFromWatchlist(symbol: String) = db.watchlistDao().delete(symbol)
+
+    suspend fun getWatchlistItem(symbol: String): WatchlistItemEntity? = db.watchlistDao().getItem(symbol)
+
+    suspend fun watchlistCount(): Int = db.watchlistDao().count()
+
     private fun sanitizeLog(msg: String): String {
         return msg.replace(Regex("token=[^&\\s]+", RegexOption.IGNORE_CASE), "token=[REDACTED]")
             .replace(Regex("password=[^&\\s]+", RegexOption.IGNORE_CASE), "password=[REDACTED]")

@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     onNavigateToSecurity: () -> Unit
 ) {
-    val repository = EdgeTraderApp.instance.repository
+    val repository = EdgeTraderApp.instance.firestoreRepository
     val secureStorage = EdgeTraderApp.instance.secureStorage
     val config by repository.configFlow.collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()

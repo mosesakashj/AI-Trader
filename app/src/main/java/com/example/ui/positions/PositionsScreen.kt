@@ -38,7 +38,7 @@ import java.util.concurrent.TimeUnit
 
 @Composable
 fun PositionsScreen() {
-    val repository = EdgeTraderApp.instance.repository
+    val repository = EdgeTraderApp.instance.firestoreRepository
     val engine = EdgeTraderApp.instance.tradingEngine
     val openPositions by repository.openPositionsFlow.collectAsState(initial = emptyList())
     val coroutineScope = rememberCoroutineScope()

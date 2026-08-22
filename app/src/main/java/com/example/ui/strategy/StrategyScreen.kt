@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun StrategyScreen() {
-    val repository = EdgeTraderApp.instance.repository
+    val repository = EdgeTraderApp.instance.firestoreRepository
     val engine = EdgeTraderApp.instance.tradingEngine
     val config by repository.configFlow.collectAsState(initial = null)
     val latestSignal by engine.latestSignal.collectAsState()

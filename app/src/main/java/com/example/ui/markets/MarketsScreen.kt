@@ -107,7 +107,7 @@ fun MarketsScreen() {
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("ALL" to "All Pairs (8)", "CRYPTO" to "Crypto (3)", "FOREX" to "Forex (3)", "COMMODITIES" to "Commodities (2)").forEach { (cat, title) ->
+                    listOf("ALL" to "All Pairs (${SymbolCatalog.ALL_SYMBOLS.size})", "CRYPTO" to "Crypto (${SymbolCatalog.getByAssetType(AssetType.CRYPTO).size})", "FOREX" to "Forex (${SymbolCatalog.getByAssetType(AssetType.FOREX).size})", "COMMODITIES" to "Commodities (${SymbolCatalog.getByAssetType(AssetType.COMMODITY).size})").forEach { (cat, title) ->
                         val isSelected = selectedCategory == cat
                         FilterChip(
                             selected = isSelected,

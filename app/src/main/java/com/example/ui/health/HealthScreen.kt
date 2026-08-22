@@ -31,7 +31,7 @@ import java.util.*
 
 @Composable
 fun HealthScreen() {
-    val repository = EdgeTraderApp.instance.repository
+    val repository = EdgeTraderApp.instance.firestoreRepository
     val engine = EdgeTraderApp.instance.tradingEngine
     val config by repository.configFlow.collectAsState(initial = null)
     val stateMachineState by engine.stateMachine.currentState.collectAsState()

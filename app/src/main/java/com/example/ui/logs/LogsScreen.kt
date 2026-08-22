@@ -28,7 +28,7 @@ import java.util.*
 
 @Composable
 fun LogsScreen() {
-    val repository = EdgeTraderApp.instance.repository
+    val repository = EdgeTraderApp.instance.firestoreRepository
     val logs by repository.systemLogsFlow.collectAsState(initial = emptyList())
     val coroutineScope = rememberCoroutineScope()
 

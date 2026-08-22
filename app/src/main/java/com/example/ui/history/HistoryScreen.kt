@@ -46,7 +46,7 @@ fun formatDistance(distance: Double, symbol: String): String {
 
 @Composable
 fun HistoryScreen() {
-    val repository = EdgeTraderApp.instance.repository
+    val repository = EdgeTraderApp.instance.firestoreRepository
     val trades by repository.allTradesFlow.collectAsState(initial = emptyList())
     val closedTrades = remember(trades) { trades.filter { it.status == TradeStatus.CLOSED } }
 

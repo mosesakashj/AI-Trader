@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Dashboard : Screen("dashboard", "Dashboard", Icons.Default.Dashboard)
     object Markets : Screen("markets", "Markets", Icons.AutoMirrored.Filled.ShowChart)
+    object Watchlist : Screen("watchlist", "Watchlist", Icons.Default.Star)
     object Strategy : Screen("strategy", "Strategy", Icons.Default.Psychology)
     object News : Screen("news", "News", Icons.Default.Newspaper)
     object Positions : Screen("positions", "Positions", Icons.Default.AccountBalanceWallet)
@@ -31,6 +32,7 @@ val bottomNavItems = listOf(
 val drawerNavItems = listOf(
     Screen.Dashboard,
     Screen.Markets,
+    Screen.Watchlist,
     Screen.Strategy,
     Screen.News,
     Screen.Positions,
