@@ -244,8 +244,7 @@ private fun MainAppContent(dashboardViewModel: DashboardViewModel) {
                         MarketsScreen()
                     }
                     composable(Screen.TradePlan.route) {
-                        val tradePlanViewModel: TradePlanScannerViewModel by viewModels()
-                        TradePlanScannerScreen(viewModel = tradePlanViewModel)
+                        TradePlanScannerScreen()
                     }
                     composable(Screen.Watchlist.route) {
                         WatchlistScreen()

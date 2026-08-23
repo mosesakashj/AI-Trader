@@ -25,10 +25,10 @@ class GeminiProvider(
     override val config: AiProviderConfig
         get() = AiProviderConfig(
             id = AiProviderType.GEMINI,
-            name = "Google Gemini Pro",
-            apiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+            name = "Google Gemini Flash",
+            apiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
             apiKey = secureStorage.getGeminiApiKey(),
-            model = "gemini-1.5-pro",
+            model = "gemini-2.5-flash",
             enabled = secureStorage.getGeminiApiKey().isNotBlank(),
             temperature = 0.3,
             maxTokens = 2048,

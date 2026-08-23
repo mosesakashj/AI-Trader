@@ -746,7 +746,7 @@ class BacktestingEngine(
 
         val strategies = StrategyType.entries.associateWith { type ->
             val config = StrategyConfig(strategyType = type)
-            type to TradingStrategy(config)
+            TradingStrategy(config)
         }
 
         val results = mutableMapOf<StrategyType, StrategyAnalysisResult>()

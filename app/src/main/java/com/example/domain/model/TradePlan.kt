@@ -1,5 +1,6 @@
 package com.example.domain.model
 
+import com.example.broker.MarketSessionInfo
 import com.example.domain.indicators.IndicatorValues
 
 data class TradePlan(

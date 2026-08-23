@@ -24,8 +24,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import org.json.JSONArray
+import org.json.JSONObject
 
 class FirestoreRepository(private val context: Context) {
+
+    private val diskPrefs = context.getSharedPreferences("edgetrader_persistent_storage", Context.MODE_PRIVATE)
 
     private val db: FirebaseFirestore? by lazy {
         try {
@@ -62,6 +66,10 @@ class FirestoreRepository(private val context: Context) {
 
     private val localWatchlist = ConcurrentHashMap<String, WatchlistItemEntity>()
     private val _localWatchlistFlow = MutableStateFlow<List<WatchlistItemEntity>>(emptyList())
+
+    init {
+        loadFromDisk()
+    }
 
     fun setUserId(uid: String?) {
         _userId.value = uid
@@ -133,6 +141,7 @@ class FirestoreRepository(private val context: Context) {
         val updated = config.copy(updatedAt = System.currentTimeMillis())
         localConfig = updated
         _localConfigFlow.value = updated
+        saveConfigToDisk(updated)
         try {
             userCollection("config")?.document("primary_config")
                 ?.set(FirestoreMapper.botConfigToMap(updated))?.await()
@@ -157,6 +166,7 @@ class FirestoreRepository(private val context: Context) {
                         doc.data?.let { FirestoreMapper.mapToTrade(it) }
                     }
                     trades.forEach { localTrades[it.id] = it }
+                    saveTradesToDisk()
                     trySend(trades)
                 }
             listeners.add(registration)
@@ -178,6 +188,7 @@ class FirestoreRepository(private val context: Context) {
                     doc.data?.let { FirestoreMapper.mapToTrade(it) }
                 }
                 trades.forEach { localTrades[it.id] = it }
+                saveTradesToDisk()
                 trades
             } else {
                 localTrades.values.sortedByDescending { it.openedAt }
@@ -191,6 +202,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun recordTrade(trade: Trade) {
         localTrades[trade.id] = trade
         _localTradesFlow.value = localTrades.values.sortedByDescending { it.openedAt }
+        saveTradesToDisk()
         try {
             userCollection("trades")?.document(trade.id)
                 ?.set(FirestoreMapper.tradeToMap(trade))?.await()
@@ -202,6 +214,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun updateTrade(trade: Trade) {
         localTrades[trade.id] = trade
         _localTradesFlow.value = localTrades.values.sortedByDescending { it.openedAt }
+        saveTradesToDisk()
         try {
             userCollection("trades")?.document(trade.id)
                 ?.set(FirestoreMapper.tradeToMap(trade))?.await()
@@ -227,6 +240,7 @@ class FirestoreRepository(private val context: Context) {
                     }
                     localPositions.clear()
                     positions.forEach { localPositions[it.id] = it }
+                    savePositionsToDisk()
                     trySend(positions)
                 }
             listeners.add(registration)
@@ -249,6 +263,7 @@ class FirestoreRepository(private val context: Context) {
                 }
                 localPositions.clear()
                 positions.forEach { localPositions[it.id] = it }
+                savePositionsToDisk()
                 positions
             } else {
                 localPositions.values.sortedByDescending { it.openedAt }
@@ -262,6 +277,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun recordPosition(position: Position) {
         localPositions[position.id] = position
         _localPositionsFlow.value = localPositions.values.sortedByDescending { it.openedAt }
+        savePositionsToDisk()
         try {
             userCollection("positions")?.document(position.id)
                 ?.set(FirestoreMapper.positionToMap(position))?.await()
@@ -273,6 +289,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun removePosition(id: String) {
         localPositions.remove(id)
         _localPositionsFlow.value = localPositions.values.sortedByDescending { it.openedAt }
+        savePositionsToDisk()
         try {
             userCollection("positions")?.document(id)?.delete()?.await()
         } catch (e: Exception) {
@@ -398,6 +415,7 @@ class FirestoreRepository(private val context: Context) {
             if (localLogs.size > 200) localLogs.removeAt(localLogs.lastIndex)
             _localLogsFlow.value = localLogs.toList()
         }
+        saveLogsToDisk()
         val docId = "${entity.timestamp}_${correlationId}"
         try {
             userCollection("logs")?.document(docId)
@@ -540,6 +558,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun addToWatchlist(item: WatchlistItemEntity) {
         localWatchlist[item.symbol] = item
         _localWatchlistFlow.value = localWatchlist.values.toList()
+        saveWatchlistToDisk()
         val data = mapOf(
             "symbol" to item.symbol,
             "displayName" to item.displayName,
@@ -560,6 +579,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun removeFromWatchlist(symbol: String) {
         localWatchlist.remove(symbol)
         _localWatchlistFlow.value = localWatchlist.values.toList()
+        saveWatchlistToDisk()
         try {
             userCollection("watchlist")?.document(symbol)?.delete()?.await()
         } catch (e: Exception) {
@@ -618,6 +638,7 @@ class FirestoreRepository(private val context: Context) {
                 }
                 localBrokerAccounts.clear()
                 accounts.forEach { localBrokerAccounts[it.id] = it }
+                saveBrokerAccountsToDisk()
                 trySend(accounts)
             }
             listeners.add(registration)
@@ -640,6 +661,7 @@ class FirestoreRepository(private val context: Context) {
                 }
                 localBrokerAccounts.clear()
                 accounts.forEach { localBrokerAccounts[it.id] = it }
+                saveBrokerAccountsToDisk()
                 accounts
             } else {
                 localBrokerAccounts.values.toList()
@@ -653,6 +675,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun saveBrokerAccount(account: BrokerAccount) {
         localBrokerAccounts[account.id] = account
         _localBrokerAccountsFlow.value = localBrokerAccounts.values.toList()
+        saveBrokerAccountsToDisk()
         try {
             userCollection("broker_accounts")?.document(account.id)
                 ?.set(FirestoreMapper.brokerAccountToMap(account))?.await()
@@ -664,6 +687,7 @@ class FirestoreRepository(private val context: Context) {
     suspend fun deleteBrokerAccount(accountId: String) {
         localBrokerAccounts.remove(accountId)
         _localBrokerAccountsFlow.value = localBrokerAccounts.values.toList()
+        saveBrokerAccountsToDisk()
         try {
             userCollection("broker_accounts")?.document(accountId)?.delete()?.await()
         } catch (e: Exception) {
@@ -682,6 +706,11 @@ class FirestoreRepository(private val context: Context) {
             localLogs.clear()
             _localLogsFlow.value = emptyList()
         }
+        diskPrefs.edit()
+            .remove("cached_trades")
+            .remove("cached_positions")
+            .remove("cached_logs")
+            .apply()
         try {
             val currentDb = db ?: return
             val batch = currentDb.batch()
@@ -692,6 +721,176 @@ class FirestoreRepository(private val context: Context) {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to clear history from Firestore: ${e.message}")
         }
+    }
+
+    // ─── Local Disk Persistence Helpers ─────────────────────────────────────
+
+    private fun loadFromDisk() {
+        try {
+            val configStr = diskPrefs.getString("cached_config", null)
+            if (configStr != null) {
+                val json = JSONObject(configStr)
+                val map = jsonToMap(json)
+                localConfig = FirestoreMapper.mapToBotConfig(map)
+                _localConfigFlow.value = localConfig
+            }
+
+            val tradesStr = diskPrefs.getString("cached_trades", null)
+            if (tradesStr != null) {
+                val arr = JSONArray(tradesStr)
+                for (i in 0 until arr.length()) {
+                    val map = jsonToMap(arr.getJSONObject(i))
+                    val trade = FirestoreMapper.mapToTrade(map)
+                    localTrades[trade.id] = trade
+                }
+                _localTradesFlow.value = localTrades.values.sortedByDescending { it.openedAt }
+            }
+
+            val positionsStr = diskPrefs.getString("cached_positions", null)
+            if (positionsStr != null) {
+                val arr = JSONArray(positionsStr)
+                for (i in 0 until arr.length()) {
+                    val map = jsonToMap(arr.getJSONObject(i))
+                    val pos = FirestoreMapper.mapToPosition(map)
+                    localPositions[pos.id] = pos
+                }
+                _localPositionsFlow.value = localPositions.values.sortedByDescending { it.openedAt }
+            }
+
+            val accountsStr = diskPrefs.getString("cached_broker_accounts", null)
+            if (accountsStr != null) {
+                val arr = JSONArray(accountsStr)
+                for (i in 0 until arr.length()) {
+                    val map = jsonToMap(arr.getJSONObject(i))
+                    val acc = FirestoreMapper.mapToBrokerAccount(map)
+                    localBrokerAccounts[acc.id] = acc
+                }
+                _localBrokerAccountsFlow.value = localBrokerAccounts.values.toList()
+            }
+
+            val watchlistStr = diskPrefs.getString("cached_watchlist", null)
+            if (watchlistStr != null) {
+                val arr = JSONArray(watchlistStr)
+                for (i in 0 until arr.length()) {
+                    val map = jsonToMap(arr.getJSONObject(i))
+                    val item = FirestoreMapper.mapToWatchlistItem(map)
+                    localWatchlist[item.symbol] = item
+                }
+                _localWatchlistFlow.value = localWatchlist.values.toList()
+            }
+
+            val logsStr = diskPrefs.getString("cached_logs", null)
+            if (logsStr != null) {
+                val arr = JSONArray(logsStr)
+                val list = mutableListOf<SystemEventEntity>()
+                for (i in 0 until arr.length()) {
+                    val map = jsonToMap(arr.getJSONObject(i))
+                    list.add(FirestoreMapper.mapToSystemEvent(map))
+                }
+                synchronized(localLogs) {
+                    localLogs.clear()
+                    localLogs.addAll(list)
+                }
+                _localLogsFlow.value = list
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed loading persistent disk cache: ${e.message}")
+        }
+    }
+
+    private fun saveConfigToDisk(config: BotConfigEntity) {
+        try {
+            val map = FirestoreMapper.botConfigToMap(config)
+            val json = mapToJson(map)
+            diskPrefs.edit().putString("cached_config", json.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving config to disk: ${e.message}")
+        }
+    }
+
+    private fun saveTradesToDisk() {
+        try {
+            val arr = JSONArray()
+            localTrades.values.forEach { trade ->
+                arr.put(mapToJson(FirestoreMapper.tradeToMap(trade)))
+            }
+            diskPrefs.edit().putString("cached_trades", arr.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving trades to disk: ${e.message}")
+        }
+    }
+
+    private fun savePositionsToDisk() {
+        try {
+            val arr = JSONArray()
+            localPositions.values.forEach { pos ->
+                arr.put(mapToJson(FirestoreMapper.positionToMap(pos)))
+            }
+            diskPrefs.edit().putString("cached_positions", arr.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving positions to disk: ${e.message}")
+        }
+    }
+
+    private fun saveBrokerAccountsToDisk() {
+        try {
+            val arr = JSONArray()
+            localBrokerAccounts.values.forEach { acc ->
+                arr.put(mapToJson(FirestoreMapper.brokerAccountToMap(acc)))
+            }
+            diskPrefs.edit().putString("cached_broker_accounts", arr.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving broker accounts to disk: ${e.message}")
+        }
+    }
+
+    private fun saveWatchlistToDisk() {
+        try {
+            val arr = JSONArray()
+            localWatchlist.values.forEach { item ->
+                arr.put(mapToJson(FirestoreMapper.watchlistItemToMap(item)))
+            }
+            diskPrefs.edit().putString("cached_watchlist", arr.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving watchlist to disk: ${e.message}")
+        }
+    }
+
+    private fun saveLogsToDisk() {
+        try {
+            val arr = JSONArray()
+            synchronized(localLogs) {
+                localLogs.take(100).forEach { log ->
+                    arr.put(mapToJson(FirestoreMapper.systemEventToMap(log)))
+                }
+            }
+            diskPrefs.edit().putString("cached_logs", arr.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving logs to disk: ${e.message}")
+        }
+    }
+
+    private fun jsonToMap(json: JSONObject): Map<String, Any> {
+        val map = mutableMapOf<String, Any>()
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = json.opt(key)
+            if (value != null && value != JSONObject.NULL) {
+                map[key] = value
+            }
+        }
+        return map
+    }
+
+    private fun mapToJson(map: Map<String, Any?>): JSONObject {
+        val json = JSONObject()
+        for ((key, value) in map) {
+            if (value != null) {
+                json.put(key, value)
+            }
+        }
+        return json
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────

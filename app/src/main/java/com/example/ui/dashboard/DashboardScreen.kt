@@ -82,55 +82,15 @@ fun DashboardScreen(
         contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 0. Account Selector Banner
-        if (brokerAccounts.size > 1) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth().testTag("account_selector_card")
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showAccountSwitcher = true }
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.AccountBalance, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(20.dp))
-                            Column {
-                                Text(
-                                    text = activeBrokerAccount?.label ?: "Broker Account",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "#${activeBrokerAccount?.accountId ?: "---"} \u00b7 ${activeBrokerAccount?.server ?: ""}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextSecondary,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Account", tint = PrimaryBlue, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-        }
-
-        // 1. Status & Control Banner
+        // 0. Account Selector & Engine Control Bar
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(1.dp, CardBorderDark),
                 modifier = Modifier.fillMaxWidth().testTag("dashboard_status_card")
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -144,14 +104,22 @@ fun DashboardScreen(
                             ModeBadge(mode = mode)
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (isBotRunning) "ACTIVE" else "OFF",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isBotRunning) EmeraldGain else TextMuted,
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                color = if (isBotRunning) EmeraldContainer else SurfaceVariantDark,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = if (isBotRunning) "AUTO ON" else "PAUSED",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isBotRunning) EmeraldDark else TextMuted,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                             Switch(
                                 checked = isBotRunning,
                                 onCheckedChange = { viewModel.toggleTradingBot(it) },
@@ -161,30 +129,34 @@ fun DashboardScreen(
                                     uncheckedThumbColor = TextMuted,
                                     uncheckedTrackColor = SurfaceVariantDark
                                 ),
-                                modifier = Modifier.testTag("engine_toggle_switch")
+                                modifier = Modifier.height(24.dp).testTag("engine_toggle_switch")
                             )
                         }
                     }
 
-                    if (stateReason.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "State: $stateReason",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Button(
-                        onClick = { showEmergencyDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("dashboard_emergency_stop_btn")
-                    ) {
-                        Icon(Icons.Default.Dangerous, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("EMERGENCY STOP (HALT ALL)", fontWeight = FontWeight.Black, color = Color.White)
+                    if (brokerAccounts.size > 1) {
+                        Surface(
+                            color = SurfaceVariantDark,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().clickable { showAccountSwitcher = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Default.AccountBalance, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                    Text(
+                                        text = "${activeBrokerAccount?.label ?: "Account"} • #${activeBrokerAccount?.accountId ?: "---"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TextPrimary
+                                    )
+                                }
+                                Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Account", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -195,16 +167,16 @@ fun DashboardScreen(
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = CrimsonContainer),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(14.dp),
                     border = BorderStroke(1.dp, CrimsonLoss.copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth().testTag("safe_mode_banner")
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = CrimsonLoss)
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = CrimsonLoss, modifier = Modifier.size(18.dp))
                             Text(
                                 text = "SAFE MODE ACTIVE",
                                 style = MaterialTheme.typography.titleSmall,
@@ -218,62 +190,165 @@ fun DashboardScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = TextPrimary
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Button(
                             onClick = { viewModel.resetSafeMode() },
                             colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
                             shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             modifier = Modifier.testTag("reset_safe_mode_btn")
                         ) {
-                            Text("Reset Safe Mode", style = MaterialTheme.typography.labelSmall)
+                            Text("Reset Safe Mode", style = MaterialTheme.typography.labelSmall, color = Color.White)
                         }
                     }
                 }
             }
         }
 
-        // 2. Account & Financial Overview Grid
+        // 1. Hero Portfolio & Risk Capital Matrix
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Account Capital & Risk",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CardBorderDark),
+                modifier = Modifier.fillMaxWidth().testTag("portfolio_hero_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Total Equity", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                            Text(
+                                text = "$${"%,.2f".format(accountInfo.equity)}",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Black,
+                                color = TextPrimary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MetricCard(
-                        title = "Equity",
-                        value = "$${"%.2f".format(accountInfo.equity)}",
-                        subtitle = "Balance: $${"%.2f".format(accountInfo.balance)}",
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetricCard(
-                        title = "Free Margin",
-                        value = "$${"%.2f".format(accountInfo.freeMargin)}",
-                        subtitle = "Margin: $${"%.2f".format(accountInfo.margin)}",
-                        modifier = Modifier.weight(1f)
-                    )
+                        val pnl = dailyPnl
+                        val isPositive = pnl >= 0
+                        Surface(
+                            color = if (isPositive) EmeraldContainer else CrimsonContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (isPositive) EmeraldGain.copy(alpha = 0.3f) else CrimsonLoss.copy(alpha = 0.3f))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    if (isPositive) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
+                                    contentDescription = null,
+                                    tint = if (isPositive) EmeraldDark else CrimsonDark,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "${if (isPositive) "+" else ""}$${"%.2f".format(pnl)}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isPositive) EmeraldDark else CrimsonDark,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = CardBorderDark)
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Balance", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                            Text(
+                                text = "$${"%,.2f".format(accountInfo.balance)}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Free Margin", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                            Text(
+                                text = "$${"%,.2f".format(accountInfo.freeMargin)}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Max Risk", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                            Text(
+                                text = "${config?.defaultRiskPercent ?: 0.25}% / trade",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = GoldHero
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Compact Quick Actions Strip
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onNavigateToMarkets,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = SurfaceDark, contentColor = PrimaryBlue),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("quick_action_markets")
+                ) {
+                    Icon(Icons.Default.ShowChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Charts", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val pnl = dailyPnl
-                    val isPositive = pnl >= 0
-                    MetricCard(
-                        title = "Today P/L",
-                        value = "${if (isPositive) "+" else ""}$${"%.2f".format(pnl)}",
-                        subtitle = if (isPositive) "Profitable session" else "Within daily risk limits",
-                        valueColor = if (isPositive) EmeraldGain else CrimsonLoss,
-                        modifier = Modifier.weight(1f)
-                    )
-                    MetricCard(
-                        title = "Active Risk",
-                        value = "${config?.defaultRiskPercent ?: 0.25}%",
-                        subtitle = "Max Daily Loss: ${config?.maxDailyLossPercent ?: 1.0}%",
-                        valueColor = GoldHero,
-                        modifier = Modifier.weight(1f)
-                    )
+                OutlinedButton(
+                    onClick = onNavigateToPositions,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = SurfaceDark, contentColor = if (openPositions.isNotEmpty()) EmeraldGain else TextSecondary),
+                    border = BorderStroke(1.dp, if (openPositions.isNotEmpty()) EmeraldGain.copy(alpha = 0.5f) else CardBorderDark),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("quick_action_positions")
+                ) {
+                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Pos (${openPositions.size})", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = onNavigateToStrategy,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = SurfaceDark, contentColor = GoldHero),
+                    border = BorderStroke(1.dp, CardBorderDark),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).testTag("quick_action_strategy")
+                ) {
+                    Icon(Icons.Default.Psychology, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Strategy", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = { showEmergencyDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonLoss),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                    modifier = Modifier.testTag("dashboard_emergency_stop_btn")
+                ) {
+                    Icon(Icons.Default.Dangerous, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 }
             }
         }

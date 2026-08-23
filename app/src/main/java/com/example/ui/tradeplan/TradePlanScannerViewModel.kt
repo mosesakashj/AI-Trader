@@ -35,7 +35,8 @@ class TradePlanScannerViewModel(
 
     val activeQuotes = engine.activeQuotes
 
-    val filteredPlans: StateFlow<List<TradePlan>> = MutableStateFlow(emptyList())
+    private val _filteredPlans = MutableStateFlow<List<TradePlan>>(emptyList())
+    val filteredPlans: StateFlow<List<TradePlan>> = _filteredPlans.asStateFlow()
 
     fun scanAllPairs() {
         if (_isScanning.value) return
@@ -114,12 +115,12 @@ class TradePlanScannerViewModel(
             val stratMatch = _filterStrategy.value == null || plan.strategyType == _filterStrategy.value
             dirMatch && stratMatch
         }
-        (filteredPlans as MutableStateFlow).value = plans
+        _filteredPlans.value = plans
     }
 
-    private fun buildStrategyConfig(strategyType: StrategyType): StrategyConfig {
+    private suspend fun buildStrategyConfig(strategyType: StrategyType): StrategyConfig {
         val config = runCatching {
-            kotlinx.coroutines.runBlocking { engine.repository.getOrCreateConfig() }
+            engine.repository.getOrCreateConfig()
         }.getOrNull()
 
         val tradeMode = try {

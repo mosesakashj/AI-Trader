@@ -654,24 +654,45 @@ class TradingStrategy(
 
         if (prevStochasticK == null || prevStochasticD == null) return null
 
+        val candleRange = max(lastClosedCandle.high - lastClosedCandle.low, symbolConfig.tickSize)
         val bodySize = abs(lastClosedCandle.close - lastClosedCandle.open)
-        val isStrongBullish = lastClosedCandle.close > lastClosedCandle.open && bodySize > atr * 0.5
-        val isStrongBearish = lastClosedCandle.close < lastClosedCandle.open && bodySize > atr * 0.5
+        val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
+        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
 
-        val bullishCross = stochasticK > stochasticD && prevStochasticK <= prevStochasticD && prevStochasticD < 50
-        val bearishCross = stochasticK < stochasticD && prevStochasticK >= prevStochasticD && prevStochasticD > 50
+        // High win-rate candle close location (top 30% for BUY, bottom 30% for SELL)
+        val closeLocation = (lastClosedCandle.close - lastClosedCandle.low) / candleRange
+        val hasStrongBullishClose = isBullishCandle && closeLocation >= 0.70 && bodySize >= atr * 0.35
+        val hasStrongBearishClose = isBearishCandle && closeLocation <= 0.30 && bodySize >= atr * 0.35
 
+        // Fast Stochastic Hook from extremes (<30 oversold bounce, >70 overbought rejection)
+        val bullishStochHook = (stochasticK > stochasticD && prevStochasticK <= prevStochasticD && prevStochasticD < 40) ||
+                (stochasticK > 20 && prevStochasticK <= 20)
+        val bearishStochHook = (stochasticK < stochasticD && prevStochasticK >= prevStochasticD && prevStochasticD > 60) ||
+                (stochasticK < 80 && prevStochasticK >= 80)
+
+        // Micro-target R (0.8R to 1.2R for ultra-fast scalping profit capture)
+        val targetRr = strategyConfig.scalpMinRr.coerceIn(0.8, 1.5)
         val adaptive = AdaptiveCalculator.computeAll(
-            atr = atr, adx = indicators.adx, adxThreshold = strategyConfig.adxThreshold,
-            baseSlMultiplier = 0.8, baseRiskReward = strategyConfig.scalpMinRr,
-            baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
-            baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
-            minimumStopDistance = symbolConfig.minimumStopDistance, tickSize = symbolConfig.tickSize,
-            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled, adaptiveTpEnabled = strategyConfig.adaptiveTpEnabled,
+            atr = atr,
+            adx = indicators.adx,
+            adxThreshold = strategyConfig.adxThreshold,
+            baseSlMultiplier = 0.65, // Tight protective stop
+            baseRiskReward = targetRr, // Fast micro-target
+            baseBeTriggerR = 0.40, // Ultra-fast BE lock
+            baseBeBufferPips = 0.8, // 0.8 pip buffer
+            baseTrailingDistanceAtr = 0.5, // Tight trailing stop
+            minimumStopDistance = symbolConfig.minimumStopDistance,
+            tickSize = symbolConfig.tickSize,
+            adaptiveSlEnabled = strategyConfig.adaptiveSlEnabled,
+            adaptiveTpEnabled = strategyConfig.adaptiveTpEnabled,
             adaptiveBeEnabled = strategyConfig.adaptiveBeEnabled
         )
 
-        if (isStrongBullish && bullishCross && lastClosedCandle.close > emaFast && emaFast > emaSlow) {
+        // High win-rate confluence: EMA trend + Stochastic Hook + Strong candle close + Tight Spread
+        val isMicroTrendBullish = lastClosedCandle.close > emaFast && emaFast >= (emaSlow - (atr * 0.1))
+        val isMicroTrendBearish = lastClosedCandle.close < emaFast && emaFast <= (emaSlow + (atr * 0.1))
+
+        if (hasStrongBullishClose && bullishStochHook && isMicroTrendBullish) {
             val entryPrice = currentQuote.ask
             val stopLoss = entryPrice - adaptive.slDistance
             val takeProfit = entryPrice + adaptive.tpDistance
@@ -694,12 +715,12 @@ class TradingStrategy(
                     trendCheck = true, adxCheck = false, pullbackCheck = false, candleCheck = true,
                     spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "BUY",
-                    reason = "Strong bullish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses above D($stochasticD), price > EMA Fast, bullish trend [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
+                    reason = "High Win-Rate Scalp: Bullish momentum candle (close at ${(closeLocation * 100).toInt()}% of bar), Stoch hook K(${"%.1f".format(stochasticK)}) > D(${"%.1f".format(stochasticD)}), Fast EMA alignment [Fast Target: +${"%.2f".format(riskReward)}R, SL: ${"%.1f".format(adaptive.slDistance)}]"
                 )
             )
         }
 
-        if (isStrongBearish && bearishCross && lastClosedCandle.close < emaFast && emaFast < emaSlow) {
+        if (hasStrongBearishClose && bearishStochHook && isMicroTrendBearish) {
             val entryPrice = currentQuote.bid
             val stopLoss = entryPrice + adaptive.slDistance
             val takeProfit = entryPrice - adaptive.tpDistance
@@ -722,7 +743,7 @@ class TradingStrategy(
                     trendCheck = true, adxCheck = false, pullbackCheck = false, candleCheck = true,
                     spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                     decision = "SELL",
-                    reason = "Strong bearish candle (body $bodySize > ATR*0.5 ${atr * 0.5}), stochastic K($stochasticK) crosses below D($stochasticD), price < EMA Fast, bearish trend [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}]"
+                    reason = "High Win-Rate Scalp: Bearish momentum candle (close at ${(closeLocation * 100).toInt()}% of bar), Stoch hook K(${"%.1f".format(stochasticK)}) < D(${"%.1f".format(stochasticD)}), Fast EMA alignment [Fast Target: +${"%.2f".format(riskReward)}R, SL: ${"%.1f".format(adaptive.slDistance)}]"
                 )
             )
         }

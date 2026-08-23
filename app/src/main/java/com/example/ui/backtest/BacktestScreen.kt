@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Science
@@ -25,6 +24,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.EdgeTraderApp
 import com.example.broker.PaperMarketDataProvider
 import com.example.domain.backtest.*
@@ -54,11 +54,20 @@ fun BacktestScreen() {
     var monteCarloResult by remember { mutableStateOf<MonteCarloResult?>(null) }
     var multiStrategyResult by remember { mutableStateOf<MultiStrategyAnalysisResult?>(null) }
 
+    var aiAuditResult by remember { mutableStateOf<com.example.ai.AiBacktestAudit?>(null) }
+    var isAuditingAi by remember { mutableStateOf(false) }
+    var aiTuningResult by remember { mutableStateOf<com.example.ai.AiStrategyOptimization?>(null) }
+    var isTuningAi by remember { mutableStateOf(false) }
+    var appliedTuningMsg by remember { mutableStateOf<String?>(null) }
+    var expandedTradeId by remember { mutableStateOf<String?>(null) }
+
     // 0: Single Asset, 1: Portfolio (All Pairs), 2: Parameter Optimizer, 3: Walk-Forward, 4: Monte Carlo, 5: Strategy Comparison
     var testMode by remember { mutableStateOf(0) }
+    var tradeFilter by remember { mutableStateOf(0) }
 
     val marketDataProvider = remember { EdgeTraderApp.instance.tradingEngine }
     val backtestEngine = remember { BacktestingEngine() }
+    val aiManager = remember { EdgeTraderApp.instance.aiManager }
 
     val symbolConfig = remember(selectedSymbol) {
         SymbolCatalog.get(selectedSymbol)
@@ -313,7 +322,7 @@ fun BacktestScreen() {
                         } else {
                             Icon(
                                 when (testMode) {
-                                    1 -> Icons.Default.AutoGraph
+                                    1 -> Icons.Default.TrendingUp
                                     2 -> Icons.Default.Tune
                                     3 -> Icons.Default.Science
                                     4 -> Icons.Default.Calculate
@@ -401,55 +410,291 @@ fun BacktestScreen() {
                             MetricCard("Expectancy", "$${"%.2f".format(res.expectancy)}", valueColor = if (res.expectancy > 0) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
                             MetricCard("Consec Losses", "${res.maxConsecutiveLosses}", valueColor = if (res.maxConsecutiveLosses <= 3) EmeraldGain else CrimsonLoss, modifier = Modifier.weight(1f))
                         }
+
+                        // AI Quantitative Audit Trigger & Summary Card
+                        HorizontalDivider(color = CardBorderDark)
+                        if (aiAuditResult == null && !isAuditingAi) {
+                            Button(
+                                onClick = {
+                                    isAuditingAi = true
+                                    coroutineScope.launch {
+                                        val auditRes = aiManager.auditBacktest(res, selectedSymbol)
+                                        aiAuditResult = auditRes.getOrNull()
+                                        isAuditingAi = false
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.TrendingUp, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Generate AI Quantitative Risk Audit", fontWeight = FontWeight.Bold)
+                            }
+                        } else if (isAuditingAi) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(color = CyanLight, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    Text("Running AI Quantitative Analysis...", style = MaterialTheme.typography.bodySmall, color = CyanLight)
+                                }
+                            }
+                        } else if (aiAuditResult != null) {
+                            val audit = aiAuditResult!!
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, CyanLight.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = CyanLight, modifier = Modifier.size(16.dp))
+                                            Text("AI Quant Diagnostic Audit", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, color = TextPrimary)
+                                        }
+                                        Surface(
+                                            color = if (audit.grade.startsWith("A")) EmeraldContainer else GoldContainer,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                "Grade: ${audit.grade}",
+                                                fontWeight = FontWeight.Black,
+                                                color = if (audit.grade.startsWith("A")) EmeraldGain else GoldHero,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+
+                                    Text(audit.summary, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Surface(
+                                            color = SurfaceDark,
+                                            shape = RoundedCornerShape(6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Text("Overfitting Risk", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                                Text(audit.overfittingRisk, fontWeight = FontWeight.Bold, color = if (audit.overfittingRisk.contains("LOW")) EmeraldGain else GoldHero, style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                        Surface(
+                                            color = SurfaceDark,
+                                            shape = RoundedCornerShape(6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Text("Expectancy Edge", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                                Text("$${"%.2f".format(res.expectancy)}/trade", fontWeight = FontWeight.Bold, color = EmeraldGain, style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                    }
+
+                                    Text("Tactical Tweaks & Optimization:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = CyanLight)
+                                    audit.tacticalTweaks.forEach { tweak ->
+                                        Text("• $tweak", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                    }
+                                }
+                            }
+                        }
+
+                        // AI Strategy Auto-Fine-Tuning & Profit Maximizer Section
+                        HorizontalDivider(color = CardBorderDark)
+                        if (appliedTuningMsg != null) {
+                            Surface(
+                                color = EmeraldContainer.copy(alpha = 0.85f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.TrendingUp, contentDescription = null, tint = EmeraldGain, modifier = Modifier.size(16.dp))
+                                    Text(appliedTuningMsg!!, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                }
+                            }
+                        }
+
+                        if (aiTuningResult == null && !isTuningAi) {
+                            Button(
+                                onClick = {
+                                    isTuningAi = true
+                                    appliedTuningMsg = null
+                                    coroutineScope.launch {
+                                        val configEntity = EdgeTraderApp.instance.firestoreRepository.getOrCreateConfig()
+                                        val currentConfig = com.example.domain.model.StrategyConfig(
+                                            strategyType = com.example.domain.model.StrategyType.valueOf(configEntity.strategyType),
+                                            emaFastPeriod = configEntity.emaFastPeriod,
+                                            emaSlowPeriod = configEntity.emaSlowPeriod,
+                                            adxThreshold = configEntity.adxThreshold,
+                                            atrSlMultiplier = configEntity.atrSlMultiplier,
+                                            riskRewardRatio = configEntity.riskRewardRatio,
+                                            breakEvenTriggerR = configEntity.breakEvenTriggerR,
+                                            trailingStopDistanceAtr = configEntity.trailingStopDistanceAtr
+                                        )
+                                        val tuneRes = aiManager.optimizeAndFineTuneStrategy(currentConfig, res, selectedSymbol)
+                                        aiTuningResult = tuneRes.getOrNull()
+                                        isTuningAi = false
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = GoldHero),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().testTag("backtest_ai_tune_btn")
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("AUTO FINE-TUNE STRATEGY WITH AI", fontWeight = FontWeight.Black, color = Color.Black)
+                            }
+                        } else if (isTuningAi) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(color = GoldHero, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    Text("Optimizing Parameters for Maximum Profit Factor...", style = MaterialTheme.typography.bodySmall, color = GoldHero)
+                                }
+                            }
+                        } else if (aiTuningResult != null) {
+                            val tuning = aiTuningResult!!
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, GoldHero.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("AI Quantitative Fine-Tuning", fontWeight = FontWeight.Bold, color = GoldHero)
+                                        Surface(color = EmeraldContainer, shape = RoundedCornerShape(6.dp)) {
+                                            Text(
+                                                "+${"%.1f".format(tuning.expectedProfitBoostPct)}% Gain",
+                                                color = EmeraldGain,
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Text(tuning.fineTuningRationale, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+
+                                    tuning.parameterOptimizations.forEach { (k, v) ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(k, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                            Text(v, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = EmeraldGain)
+                                        }
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                val repo = EdgeTraderApp.instance.firestoreRepository
+                                                val current = repo.getOrCreateConfig()
+                                                val newCfg = tuning.appliedConfig
+                                                val updated = current.copy(
+                                                    emaFastPeriod = newCfg.emaFastPeriod,
+                                                    emaSlowPeriod = newCfg.emaSlowPeriod,
+                                                    adxThreshold = newCfg.adxThreshold,
+                                                    atrSlMultiplier = newCfg.atrSlMultiplier,
+                                                    riskRewardRatio = newCfg.riskRewardRatio,
+                                                    breakEvenTriggerR = newCfg.breakEvenTriggerR,
+                                                    breakEvenBufferPips = newCfg.breakEvenBufferPips,
+                                                    trailingStopDistanceAtr = newCfg.trailingStopDistanceAtr,
+                                                    breakEvenEnabled = newCfg.breakEvenEnabled,
+                                                    trailingStopEnabled = newCfg.trailingStopEnabled,
+                                                    earlyExitOnTrendReversal = newCfg.earlyExitOnTrendReversal,
+                                                    adaptiveTpEnabled = newCfg.adaptiveTpEnabled,
+                                                    adaptiveSlEnabled = newCfg.adaptiveSlEnabled,
+                                                    adaptiveBeEnabled = newCfg.adaptiveBeEnabled
+                                                )
+                                                repo.updateConfig(updated)
+                                                appliedTuningMsg = "AI Fine-Tuned Strategy successfully deployed to Bot Engine!"
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldGain),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.TrendingUp, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("APPLY TO BOT ENGINE", fontWeight = FontWeight.Black, color = Color.Black, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // Simulated Trade Log Items
+            // Simulated Trade Log Items - REDESIGNED & POLISHED
             if (res.trades.isNotEmpty()) {
-                var tradeFilter by remember { mutableStateOf(0) }
                 val filteredTrades = when (tradeFilter) {
                     1 -> res.trades.filter { it.profit > 0 }
                     2 -> res.trades.filter { it.profit <= 0 }
+                    3 -> res.trades.filter { it.closeReason == CloseReason.BREAK_EVEN }
                     else -> res.trades
                 }
                 val totalWins = res.trades.count { it.profit > 0 }
                 val totalLosses = res.trades.count { it.profit <= 0 }
+                val totalBe = res.trades.count { it.closeReason == CloseReason.BREAK_EVEN }
                 val netPnl = res.trades.sumOf { it.profit }
 
-                // Summary Stats
+                // Quick Statistics Row
                 item {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, EmeraldDark),
+                            border = BorderStroke(1.dp, EmeraldDark.copy(alpha = 0.5f)),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Wins", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                Text("Wins", style = MaterialTheme.typography.labelSmall, color = TextMuted)
                                 Text("$totalWins", fontWeight = FontWeight.Bold, color = EmeraldGain, style = MaterialTheme.typography.titleMedium)
                             }
                         }
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, CrimsonDark),
+                            border = BorderStroke(1.dp, CrimsonDark.copy(alpha = 0.5f)),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Losses", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                Text("Losses", style = MaterialTheme.typography.labelSmall, color = TextMuted)
                                 Text("$totalLosses", fontWeight = FontWeight.Bold, color = CrimsonLoss, style = MaterialTheme.typography.titleMedium)
                             }
                         }
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, if (netPnl >= 0) EmeraldDark else CrimsonDark),
+                            border = BorderStroke(1.dp, CardBorderDark),
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Net P/L", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                                Text("Break-Even", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                Text("$totalBe", fontWeight = FontWeight.Bold, color = CyanLight, style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, if (netPnl >= 0) EmeraldDark else CrimsonDark),
+                            modifier = Modifier.weight(1.2f)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Net Return", style = MaterialTheme.typography.labelSmall, color = TextMuted)
                                 Text(
                                     "${if (netPnl >= 0) "+" else ""}$${"%.2f".format(netPnl)}",
                                     fontWeight = FontWeight.Bold,
@@ -463,224 +708,167 @@ fun BacktestScreen() {
 
                 // Filter Chips
                 item {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = tradeFilter == 0,
-                            onClick = { tradeFilter = 0 },
-                            label = { Text("All (${res.trades.size})") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = PrimaryBlueContainer,
-                                selectedLabelColor = PrimaryBlue,
-                                containerColor = SurfaceDark,
-                                labelColor = TextSecondary
-                            ),
-                            border = BorderStroke(1.dp, if (tradeFilter == 0) PrimaryBlue else CardBorderDark)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            0 to "All (${res.trades.size})",
+                            1 to "Wins ($totalWins)",
+                            2 to "Losses ($totalLosses)",
+                            3 to "BE ($totalBe)"
+                        ).forEach { (idx, label) ->
+                            val isSel = tradeFilter == idx
+                            FilterChip(
+                                selected = isSel,
+                                onClick = { tradeFilter = idx },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryBlueContainer,
+                                    selectedLabelColor = PrimaryBlue,
+                                    containerColor = SurfaceDark,
+                                    labelColor = TextSecondary
+                                ),
+                                border = BorderStroke(1.dp, if (isSel) PrimaryBlue else CardBorderDark),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Section Title
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Simulated Executions (${filteredTrades.size})",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
                         )
-                        FilterChip(
-                            selected = tradeFilter == 1,
-                            onClick = { tradeFilter = 1 },
-                            label = { Text("Wins ($totalWins)") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = EmeraldContainer,
-                                selectedLabelColor = EmeraldGain,
-                                containerColor = SurfaceDark,
-                                labelColor = TextSecondary
-                            ),
-                            border = BorderStroke(1.dp, if (tradeFilter == 1) EmeraldGain else CardBorderDark)
-                        )
-                        FilterChip(
-                            selected = tradeFilter == 2,
-                            onClick = { tradeFilter = 2 },
-                            label = { Text("Losses ($totalLosses)") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = CrimsonContainer,
-                                selectedLabelColor = CrimsonLoss,
-                                containerColor = SurfaceDark,
-                                labelColor = TextSecondary
-                            ),
-                            border = BorderStroke(1.dp, if (tradeFilter == 2) CrimsonLoss else CardBorderDark)
+                        Text(
+                            "Showing top ${minOf(filteredTrades.size, 30)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextMuted
                         )
                     }
                 }
 
-                // Title
-                item {
-                    Text(
-                        "Executed Simulated Trades (${filteredTrades.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                }
-
-                // Enhanced Trade Cards
-                items(filteredTrades.take(15)) { trade ->
+                // Polished Compact Trade Item List
+                items(filteredTrades.take(30)) { trade ->
                     val isWin = trade.profit > 0
+                    val isBe = trade.closeReason == CloseReason.BREAK_EVEN
                     val tradeIndex = res.trades.indexOf(trade) + 1
+                    val isExpanded = expandedTradeId == trade.id
                     val duration = if (trade.closedAt != null && trade.openedAt != null) {
                         val diffMs = trade.closedAt!! - trade.openedAt!!
                         val hours = diffMs / 3600000
                         val minutes = (diffMs % 3600000) / 60000
                         if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
-                    } else "Open"
+                    } else "15m"
 
                     Card(
                         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, if (isWin) EmeraldDark else CrimsonDark),
+                        border = BorderStroke(1.dp, if (isWin) EmeraldDark.copy(alpha = 0.4f) else if (isBe) CyanLight.copy(alpha = 0.3f) else CrimsonDark.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Header Row: Trade # | Direction Badge | Symbol | Duration
+                            // Row 1: Index + Direction Badge + Symbol + Reason Pill + P/L
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Surface(
-                                        color = SurfaceVariantDark,
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            "#$tradeIndex",
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextSecondary,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("#$tradeIndex", fontWeight = FontWeight.Bold, color = TextMuted, style = MaterialTheme.typography.labelSmall)
                                     Surface(
                                         color = if (trade.direction == TradeDirection.BUY) EmeraldContainer else CrimsonContainer,
-                                        shape = RoundedCornerShape(6.dp)
+                                        shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                         ) {
                                             Icon(
                                                 if (trade.direction == TradeDirection.BUY) Icons.Default.TrendingUp else Icons.Default.TrendingDown,
                                                 contentDescription = null,
                                                 tint = if (trade.direction == TradeDirection.BUY) EmeraldGain else CrimsonLoss,
-                                                modifier = Modifier.size(12.dp)
+                                                modifier = Modifier.size(11.dp)
                                             )
                                             Spacer(modifier = Modifier.width(3.dp))
                                             Text(
                                                 trade.direction.name,
                                                 color = if (trade.direction == TradeDirection.BUY) EmeraldGain else CrimsonLoss,
                                                 fontWeight = FontWeight.Bold,
-                                                style = MaterialTheme.typography.labelSmall
+                                                fontSize = 10.sp
                                             )
                                         }
                                     }
-                                    Text("${trade.symbol}", fontWeight = FontWeight.Bold, color = TextPrimary)
+                                    Text(trade.symbol, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = TextPrimary)
+                                    if (trade.closeReason != null) {
+                                        val (reasonBg, reasonColor, reasonText) = when (trade.closeReason) {
+                                            CloseReason.TAKE_PROFIT -> Triple(EmeraldContainer, EmeraldGain, "TP")
+                                            CloseReason.STOP_LOSS -> Triple(CrimsonContainer, CrimsonLoss, "SL")
+                                            CloseReason.BREAK_EVEN -> Triple(CyanContainer, CyanLight, "BE")
+                                            CloseReason.TRAILING_STOP -> Triple(GoldContainer, GoldHero, "TS")
+                                            CloseReason.TREND_REVERSAL -> Triple(SurfaceVariantDark, GoldHero, "TREV")
+                                            else -> Triple(SurfaceVariantDark, TextSecondary, "EXIT")
+                                        }
+                                        Surface(color = reasonBg, shape = RoundedCornerShape(4.dp)) {
+                                            Text(
+                                                reasonText,
+                                                color = reasonColor,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 9.sp,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
                                 }
-                                Surface(
-                                    color = SurfaceVariantDark,
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        duration,
-                                        color = TextSecondary,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
 
-                            // Entry → Exit Row with Close Reason Badge
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "${trade.entryPrice}  →  ${trade.closePrice ?: "-"}",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TextPrimary
-                                )
-                                if (trade.closeReason != null) {
-                                    val reasonColor = when (trade.closeReason) {
-                                        CloseReason.TAKE_PROFIT -> EmeraldGain
-                                        CloseReason.STOP_LOSS -> CrimsonLoss
-                                        CloseReason.BREAK_EVEN -> CyanLight
-                                        CloseReason.TRAILING_STOP -> GoldHero
-                                        else -> TextSecondary
-                                    }
-                                    val reasonBg = when (trade.closeReason) {
-                                        CloseReason.TAKE_PROFIT -> EmeraldContainer
-                                        CloseReason.STOP_LOSS -> CrimsonContainer
-                                        CloseReason.BREAK_EVEN -> CyanContainer
-                                        CloseReason.TRAILING_STOP -> GoldContainer
-                                        else -> SurfaceVariantDark
-                                    }
-                                    val reasonLabel = when (trade.closeReason) {
-                                        CloseReason.TAKE_PROFIT -> "TP"
-                                        CloseReason.STOP_LOSS -> "SL"
-                                        CloseReason.BREAK_EVEN -> "BE"
-                                        CloseReason.TRAILING_STOP -> "TS"
-                                        CloseReason.TREND_REVERSAL -> "TREV"
-                                        CloseReason.MANUAL -> "MNL"
-                                        CloseReason.EMERGENCY_STOP -> "EMRG"
-                                        CloseReason.SAFE_MODE -> "SAFE"
-                                        CloseReason.EXPIRED -> "EXP"
-                                    }
-                                    Surface(color = reasonBg, shape = RoundedCornerShape(4.dp)) {
-                                        Text(
-                                            reasonLabel,
-                                            color = reasonColor,
-                                            fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            // P/L Row
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "${"%.2f".format(trade.volume)} lots",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextMuted
-                                )
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(
                                         "${if (trade.profit >= 0) "+" else ""}$${"%.2f".format(trade.profit)}",
                                         fontWeight = FontWeight.Bold,
                                         color = if (isWin) EmeraldGain else CrimsonLoss,
-                                        style = MaterialTheme.typography.bodyLarge
+                                        style = MaterialTheme.typography.labelLarge
                                     )
                                     Surface(
-                                        color = if (isWin) EmeraldContainer else CrimsonContainer,
-                                        shape = RoundedCornerShape(6.dp)
+                                        color = if (trade.profitR >= 0) EmeraldContainer else CrimsonContainer,
+                                        shape = RoundedCornerShape(4.dp)
                                     ) {
                                         Text(
                                             "${if (trade.profitR >= 0) "+" else ""}${"%.2f".format(trade.profitR)}R",
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isWin) EmeraldGain else CrimsonLoss,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            color = if (trade.profitR >= 0) EmeraldGain else CrimsonLoss,
+                                            fontSize = 10.sp,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
                             }
 
-                            // SL / TP / Volume Compact Row
+                            // Row 2: Entry -> Exit Prices + Duration & Volume
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("SL: ${trade.stopLoss}", style = MaterialTheme.typography.labelSmall, color = CrimsonLoss)
-                                Text("TP: ${trade.takeProfit}", style = MaterialTheme.typography.labelSmall, color = EmeraldGain)
-                                if (trade.slippage > 0) {
-                                    Text("Slip: ${"%.1f".format(trade.slippage)}", style = MaterialTheme.typography.labelSmall, color = GoldHero)
-                                }
+                                Text(
+                                    "${trade.entryPrice} → ${trade.closePrice ?: "-"}",
+                                    fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    "$duration • ${"%.2f".format(trade.volume)} lots",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted
+                                )
                             }
                         }
                     }

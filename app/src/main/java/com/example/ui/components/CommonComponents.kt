@@ -52,7 +52,7 @@ fun StatusPulseIndicator(
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
+        initialValue = 0.35f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
             animation = tween(800, easing = LinearEasing),
@@ -61,24 +61,31 @@ fun StatusPulseIndicator(
         label = "alpha"
     )
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    Surface(
+        color = baseColor.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, baseColor.copy(alpha = 0.25f)),
         modifier = modifier
     ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(baseColor.copy(alpha = alpha))
-        )
-        Text(
-            text = state.name,
-            style = MaterialTheme.typography.labelSmall,
-            color = baseColor,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(baseColor.copy(alpha = alpha))
+            )
+            Text(
+                text = state.name,
+                style = MaterialTheme.typography.labelSmall,
+                color = baseColor,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+            )
+        }
     }
 }
 
@@ -96,7 +103,7 @@ fun ModeBadge(
     Surface(
         color = bgColor,
         shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, textColor.copy(alpha = 0.3f)),
+        border = BorderStroke(1.dp, textColor.copy(alpha = 0.35f)),
         modifier = modifier
     ) {
         Text(
@@ -104,7 +111,7 @@ fun ModeBadge(
             color = textColor,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Black,
-            letterSpacing = 1.sp,
+            letterSpacing = 0.5.sp,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
@@ -121,23 +128,24 @@ fun MetricCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, CardBorderDark),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = modifier.testTag(testTag)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+                fontWeight = FontWeight.Medium
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 color = valueColor,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
@@ -147,7 +155,8 @@ fun MetricCard(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted
+                    color = TextMuted,
+                    maxLines = 1
                 )
             }
         }

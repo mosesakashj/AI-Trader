@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.domain.model.*
 import com.example.ui.theme.*
@@ -25,7 +26,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TradePlanScannerScreen(viewModel: TradePlanScannerViewModel) {
+fun TradePlanScannerScreen(viewModel: TradePlanScannerViewModel = viewModel()) {
     val tradePlans by viewModel.tradePlans.collectAsStateWithLifecycle()
     val filteredPlans by viewModel.filteredPlans.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()

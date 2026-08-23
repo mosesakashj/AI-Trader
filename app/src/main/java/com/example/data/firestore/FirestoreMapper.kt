@@ -4,6 +4,7 @@ import com.example.data.entities.BotConfigEntity
 import com.example.data.entities.HeartbeatEntity
 import com.example.data.entities.SignalEntity
 import com.example.data.entities.SystemEventEntity
+import com.example.data.entities.WatchlistItemEntity
 import com.example.domain.model.*
 import com.example.domain.model.BrokerAccount
 
@@ -361,5 +362,27 @@ object FirestoreMapper {
         apiKey = map["apiKey"] as? String ?: "",
         isActive = map["isActive"] as? Boolean ?: false,
         createdAt = (map["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+    )
+
+    fun watchlistItemToMap(item: WatchlistItemEntity): Map<String, Any> = mapOf(
+        "symbol" to item.symbol,
+        "displayName" to item.displayName,
+        "assetType" to item.assetType,
+        "addedAt" to item.addedAt,
+        "isMonitoring" to item.isMonitoring,
+        "alertOnSignal" to item.alertOnSignal,
+        "alertOnSessionOpen" to item.alertOnSessionOpen,
+        "notes" to item.notes
+    )
+
+    fun mapToWatchlistItem(map: Map<String, Any>): WatchlistItemEntity = WatchlistItemEntity(
+        symbol = map["symbol"] as? String ?: "",
+        displayName = map["displayName"] as? String ?: "",
+        assetType = map["assetType"] as? String ?: "FOREX",
+        addedAt = (map["addedAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+        isMonitoring = map["isMonitoring"] as? Boolean ?: true,
+        alertOnSignal = map["alertOnSignal"] as? Boolean ?: true,
+        alertOnSessionOpen = map["alertOnSessionOpen"] as? Boolean ?: false,
+        notes = map["notes"] as? String ?: ""
     )
 }

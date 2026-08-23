@@ -42,11 +42,16 @@ import kotlin.math.abs
 fun PositionsScreen() {
     val repository = EdgeTraderApp.instance.firestoreRepository
     val engine = EdgeTraderApp.instance.tradingEngine
+    val aiManager = EdgeTraderApp.instance.aiManager
     val openPositions by repository.openPositionsFlow.collectAsState(initial = emptyList())
+    val marketStructurePlans by engine.marketStructurePlans.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     var showCloseAllDialog by remember { mutableStateOf(false) }
     var expandedPositionId by remember { mutableStateOf<String?>(null) }
+    var aiAuditPosition by remember { mutableStateOf<Pair<Position, com.example.domain.strategy.MarketStructurePlan>?>(null) }
+    var aiAuditResult by remember { mutableStateOf<com.example.ai.AiPositionAudit?>(null) }
+    var isAuditingAi by remember { mutableStateOf(false) }
 
     if (showCloseAllDialog) {
         CloseAllPositionsDialog(
@@ -56,6 +61,64 @@ fun PositionsScreen() {
                 coroutineScope.launch { engine.closeAllPositions() }
             },
             onDismiss = { showCloseAllDialog = false }
+        )
+    }
+
+    if (aiAuditPosition != null) {
+        val (pos, plan) = aiAuditPosition!!
+        AlertDialog(
+            onDismissRequest = {
+                aiAuditPosition = null
+                aiAuditResult = null
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.TrendingUp, contentDescription = null, tint = CyanLight)
+                    Text("AI Market Structure Plan: ${pos.symbol}", fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (isAuditingAi) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = CyanLight)
+                        }
+                    } else if (aiAuditResult != null) {
+                        val audit = aiAuditResult!!
+                        Surface(
+                            color = PrimaryBlueContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Verdict: ${audit.verdict} (Confidence: ${(audit.confidence * 100).toInt()}%)",
+                                color = PrimaryBlue,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(10.dp),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                        Text(audit.marketStructureAnalysis, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        HorizontalDivider(color = CardBorderDark)
+                        Text("Continuous Plan Steps:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = TextPrimary)
+                        audit.continuousPlanSteps.forEach { step ->
+                            Text("• $step", style = MaterialTheme.typography.bodySmall, color = CyanLight)
+                        }
+                        HorizontalDivider(color = CardBorderDark)
+                        Text(audit.immediateAction, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelSmall, color = EmeraldGain)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    aiAuditPosition = null
+                    aiAuditResult = null
+                }) {
+                    Text("Done", color = CyanLight)
+                }
+            },
+            containerColor = SurfaceDark,
+            shape = RoundedCornerShape(16.dp)
         )
     }
 
@@ -99,13 +162,26 @@ fun PositionsScreen() {
             }
 
             items(openPositions, key = { it.id }) { position ->
+                val plan = marketStructurePlans[position.id]
                 ExpandablePositionCard(
                     position = position,
+                    marketPlan = plan,
                     isExpanded = expandedPositionId == position.id,
                     onToggleExpand = {
                         expandedPositionId = if (expandedPositionId == position.id) null else position.id
                     },
-                    onClose = { coroutineScope.launch { engine.closeSinglePosition(position.id) } }
+                    onClose = { coroutineScope.launch { engine.closeSinglePosition(position.id) } },
+                    onAiAudit = {
+                        if (plan != null) {
+                            aiAuditPosition = Pair(position, plan)
+                            isAuditingAi = true
+                            coroutineScope.launch {
+                                val res = aiManager.auditPositionStructure(plan, position)
+                                aiAuditResult = res.getOrNull()
+                                isAuditingAi = false
+                            }
+                        }
+                    }
                 )
             }
 
@@ -421,9 +497,11 @@ private fun EmptyPositionsCard(
 @Composable
 private fun ExpandablePositionCard(
     position: Position,
+    marketPlan: com.example.domain.strategy.MarketStructurePlan?,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     onClose: () -> Unit,
+    onAiAudit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isLong = position.direction == TradeDirection.BUY
@@ -498,7 +576,7 @@ private fun ExpandablePositionCard(
                                 ((position.currentPrice - position.entryPrice) / position.entryPrice * 100.0) * (if (isLong) 1 else -1)
                             } else 0.0
                             Text(
-                                text = "${if (pct >= 0) "+" else ""}${"%.2f".format(pct)}%%",
+                                text = "${if (pct >= 0) "+" else ""}${"%.2f".format(pct)}%",
                                 fontSize = 11.sp,
                                 color = if (isProfit) EmeraldGain else CrimsonLoss,
                                 fontFamily = FontFamily.Monospace
@@ -528,6 +606,38 @@ private fun ExpandablePositionCard(
                         tint = TextMuted,
                         modifier = Modifier.size(20.dp)
                     )
+                }
+
+                // Market Structure Summary Snippet
+                if (marketPlan != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        color = SurfaceVariantDark,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Default.TrendingUp, contentDescription = null, tint = CyanLight, modifier = Modifier.size(12.dp))
+                                Text(
+                                    text = marketPlan.structurePhase,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = CyanLight,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Text(
+                                text = marketPlan.continuousAction.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EmeraldGain,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -587,6 +697,21 @@ private fun ExpandablePositionCard(
                     DetailRow(label = "Daily P&L", value = "%.2f".format(position.unrealizedProfit))
                     DetailRow(label = "R/R Achieved", value = "%.2f".format(rrAchieved))
 
+                    if (marketPlan != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Market Structure & Continuous Plan",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        DetailRow(label = "Trend Health", value = marketPlan.trendHealth)
+                        DetailRow(label = "Nearest Support", value = "%.5f".format(marketPlan.nearestSupport))
+                        DetailRow(label = "Nearest Resistance", value = "%.5f".format(marketPlan.nearestResistance))
+                        DetailRow(label = "Continuous Advice", value = marketPlan.actionAdvice)
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(
@@ -611,26 +736,39 @@ private fun ExpandablePositionCard(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Button(
-                        onClick = onClose,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CrimsonLoss,
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Close Position",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onAiAudit,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, CyanLight.copy(alpha = 0.5f))
+                        ) {
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = CyanLight, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("AI Plan Audit", fontSize = 12.sp, color = CyanLight, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Button(
+                            onClick = onClose,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CrimsonLoss,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Close",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }

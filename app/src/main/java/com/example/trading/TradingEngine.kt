@@ -55,6 +55,9 @@ class TradingEngine(
     private val _consecutiveLosses = MutableStateFlow(0)
     val consecutiveLosses: StateFlow<Int> = _consecutiveLosses.asStateFlow()
 
+    private val _marketStructurePlans = MutableStateFlow<Map<String, MarketStructurePlan>>(emptyMap())
+    val marketStructurePlans: StateFlow<Map<String, MarketStructurePlan>> = _marketStructurePlans.asStateFlow()
+
     private var quoteStreamJob: Job? = null
     private var reconciliationJob: Job? = null
 
@@ -338,6 +341,10 @@ class TradingEngine(
             repository.recordTrade(trade)
             repository.removePosition(trade.id)
 
+            val plans = _marketStructurePlans.value.toMutableMap()
+            plans.remove(trade.id)
+            _marketStructurePlans.value = plans
+
             // Update daily stats
             _dailyProfitLoss.value += trade.profit
             if (trade.profit <= 0) {
@@ -470,6 +477,21 @@ class TradingEngine(
                 stopLoss = updatedSL
             )
             repository.recordPosition(updatedPos)
+
+            // Market Structure & Continuous Trade Plan Monitor
+            try {
+                val plan = MarketStructureMonitor.analyzePositionStructure(
+                    position = updatedPos,
+                    currentQuote = quote,
+                    candles = candles,
+                    symbolConfig = symbolConfig
+                )
+                val currentPlans = _marketStructurePlans.value.toMutableMap()
+                currentPlans[pos.id] = plan
+                _marketStructurePlans.value = currentPlans
+            } catch (_: Exception) {
+                // Non-blocking fallback
+            }
 
             if (slChanged) {
                 // Synchronize SL with active broker adapter
@@ -743,7 +765,7 @@ class TradingEngine(
         }
     }
 
-    private fun evaluateShadowStrategies(
+    private suspend fun evaluateShadowStrategies(
         symbol: String,
         candles: List<Candle>,
         quote: Quote,
@@ -855,7 +877,7 @@ class TradingEngine(
         }
     }
 
-    fun analyzeSymbolForTradePlan(
+    suspend fun analyzeSymbolForTradePlan(
         symbol: String,
         strategyType: StrategyType,
         strategyConfig: StrategyConfig
@@ -870,9 +892,7 @@ class TradingEngine(
         val closedCandles = candles.filter { it.isClosed }
         if (closedCandles.size < 30) return null
 
-        val config = runCatching {
-            kotlinx.coroutines.runBlocking { repository.getOrCreateConfig() }
-        }.getOrNull() ?: BotConfigEntity()
+        val config = repository.getOrCreateConfig()
 
         val riskConfig = RiskConfig(
             defaultRiskPercent = config.defaultRiskPercent,
@@ -1131,6 +1151,95 @@ class TradingEngine(
             shadowStrategies[type] = TradingStrategy(cfg)
             shadowSignalsAccumulator[type] = mutableListOf()
         }
+    }
+
+    suspend fun executeAiTradePlan(plan: com.example.ai.AiInstitutionalTradePlan): Result<String> {
+        val symbolConfig = symbolConfigs[plan.symbol]
+            ?: return Result.failure(IllegalStateException("Symbol ${plan.symbol} configuration not found"))
+
+        val quote = _activeQuotes.value[plan.symbol]
+            ?: return Result.failure(IllegalStateException("No active quote for ${plan.symbol}"))
+
+        val openPositions = repository.getOpenPositions()
+        val config = repository.getOrCreateConfig()
+
+        if (openPositions.size >= config.maxOpenPositions) {
+            return Result.failure(IllegalStateException("Maximum open positions (${config.maxOpenPositions}) reached"))
+        }
+
+        val orderRequest = OrderRequest(
+            clientOrderId = UUID.randomUUID().toString(),
+            symbol = plan.symbol,
+            direction = plan.direction,
+            volume = plan.recommendedLotSize,
+            requestedPrice = plan.entryPrice,
+            stopLoss = plan.stopLoss,
+            takeProfit = plan.takeProfit1,
+            maxSlippage = 2.0,
+            mode = activeBroker.mode
+        )
+
+        val orderResult = activeBroker.placeOrder(orderRequest)
+        if (!orderResult.success) {
+            val err = orderResult.errorMessage ?: "Order execution failed"
+            repository.logEvent(
+                LogLevel.ERROR,
+                "TradingEngine",
+                "AI_TRADE_PLAN_FAILED",
+                "Failed to execute AI Trade Plan for ${plan.symbol}: $err",
+                plan.symbol
+            )
+            return Result.failure(RuntimeException(err))
+        }
+
+        val newPosition = Position(
+            id = orderResult.positionId,
+            symbol = plan.symbol,
+            direction = plan.direction,
+            volume = plan.recommendedLotSize,
+            entryPrice = orderResult.executedPrice,
+            currentPrice = orderResult.executedPrice,
+            stopLoss = plan.stopLoss,
+            takeProfit = plan.takeProfit1,
+            unrealizedProfit = 0.0,
+            unrealizedR = 0.0,
+            openedAt = System.currentTimeMillis(),
+            mode = activeBroker.mode
+        )
+
+        repository.recordPosition(newPosition)
+        stateMachine.transitionTo(StateMachineState.POSITION_OPEN, "Active position open via AI Trade Plan on ${plan.symbol}")
+
+        val openTrade = Trade(
+            id = orderResult.positionId,
+            brokerOrderId = orderResult.orderId,
+            brokerPositionId = orderResult.positionId,
+            symbol = plan.symbol,
+            direction = plan.direction,
+            volume = plan.recommendedLotSize,
+            entryPrice = orderResult.executedPrice,
+            stopLoss = plan.stopLoss,
+            takeProfit = plan.takeProfit1,
+            riskAmount = plan.maxRiskAmountUsd,
+            riskPercent = 0.25,
+            rr = plan.riskRewardRatio,
+            openedAt = System.currentTimeMillis(),
+            status = TradeStatus.OPEN,
+            strategyVersion = "AI-Plan-${plan.strategyType.name}",
+            mode = activeBroker.mode,
+            slippage = orderResult.slippage
+        )
+        repository.recordTrade(openTrade)
+
+        repository.logEvent(
+            LogLevel.INFO,
+            "TradingEngine",
+            "AI_TRADE_PLAN_DEPLOYED",
+            "AI Trade Plan deployed for ${plan.symbol} (${plan.direction}) at ${orderResult.executedPrice} (Vol: ${plan.recommendedLotSize}, SL: ${plan.stopLoss}, TP: ${plan.takeProfit1})",
+            plan.symbol
+        )
+
+        return Result.success("AI Trade Plan executed successfully! Order #${orderResult.orderId} filled at ${orderResult.executedPrice}")
     }
 
     private fun applySymbolTimeframes(config: BotConfigEntity) {

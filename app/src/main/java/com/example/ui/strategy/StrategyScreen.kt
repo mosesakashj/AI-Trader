@@ -7,6 +7,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,7 +20,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.EdgeTraderApp
+import com.example.ai.AiStrategyAudit
+import com.example.ai.AiStrategyOptimization
 import com.example.domain.model.StrategyType
 import com.example.domain.model.TradeMode
 import com.example.ui.components.FactorChip
@@ -26,10 +34,17 @@ import kotlinx.coroutines.launch
 fun StrategyScreen() {
     val repository = EdgeTraderApp.instance.firestoreRepository
     val engine = EdgeTraderApp.instance.tradingEngine
+    val aiManager = remember { EdgeTraderApp.instance.aiManager }
     val config by repository.configFlow.collectAsState(initial = null)
     val latestSignal by engine.latestSignal.collectAsState()
     val shadowSignals by engine.shadowSignals.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+
+    var aiStrategyAudit by remember { mutableStateOf<AiStrategyAudit?>(null) }
+    var isAuditingStrategy by remember { mutableStateOf(false) }
+    var aiOptimization by remember { mutableStateOf<AiStrategyOptimization?>(null) }
+    var isOptimizingStrategy by remember { mutableStateOf(false) }
+    var appliedOptimizationNotice by remember { mutableStateOf<String?>(null) }
 
     var strategyType by remember(config) {
         mutableStateOf(
@@ -176,6 +191,358 @@ fun StrategyScreen() {
                                     selected = strategyType == type
                                 )
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // AI Strategy Edge Diagnostic Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, CyanLight.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth().testTag("ai_strategy_audit_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = CyanLight, modifier = Modifier.size(18.dp))
+                            Text("AI Strategy Edge Diagnostic", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        }
+
+                        if (aiStrategyAudit != null) {
+                            Surface(
+                                color = EmeraldContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    "Edge: ${aiStrategyAudit!!.edgeScore}/100",
+                                    fontWeight = FontWeight.Bold,
+                                    color = EmeraldGain,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (aiStrategyAudit == null && !isAuditingStrategy) {
+                        Text(
+                            "Audit current parameters, regime adaptability, and receive quantitative parameter tuning recommendations for ${strategyType.displayName}.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+
+                        Button(
+                            onClick = {
+                                isAuditingStrategy = true
+                                coroutineScope.launch {
+                                    val currentStrategyConfig = com.example.domain.model.StrategyConfig(
+                                        strategyType = strategyType,
+                                        tradeMode = tradeMode,
+                                        emaFastPeriod = fastEma.toIntOrNull() ?: 20,
+                                        emaSlowPeriod = slowEma.toIntOrNull() ?: 50,
+                                        adxThreshold = adxMin.toDoubleOrNull() ?: 25.0,
+                                        atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0,
+                                        breakEvenTriggerR = breakEvenTriggerR.toDoubleOrNull() ?: 0.8,
+                                        trailingStopDistanceAtr = trailingStopDistanceAtr.toDoubleOrNull() ?: 1.0
+                                    )
+                                    val auditRes = aiManager.auditStrategy(currentStrategyConfig)
+                                    aiStrategyAudit = auditRes.getOrNull()
+                                    isAuditingStrategy = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Run AI Strategy Edge Audit", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+                    } else if (isAuditingStrategy) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(color = CyanLight, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Analyzing Strategy Edge & Market Regimes...", style = MaterialTheme.typography.bodySmall, color = CyanLight)
+                        }
+                    } else if (aiStrategyAudit != null) {
+                        val audit = aiStrategyAudit!!
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(color = SurfaceVariantDark, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("Market Fit: ${audit.marketFitRating}", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CyanLight)
+                                    Text(audit.executiveSummary, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                }
+                            }
+
+                            Text("Parameter Analysis:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = CyanLight)
+                            audit.parameterAnalysis.forEach { s ->
+                                Text("• $s", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            }
+
+                            Text("AI Tuning Recommendations:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = GoldHero)
+                            audit.recommendedAdjustments.forEach { v ->
+                                Text("⚡ $v", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            }
+
+                            Surface(color = SurfaceVariantDark, shape = RoundedCornerShape(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Risk Plan: ${audit.riskManagementPlan}", style = MaterialTheme.typography.labelSmall, color = EmeraldGain)
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    isAuditingStrategy = true
+                                    coroutineScope.launch {
+                                        val currentStrategyConfig = com.example.domain.model.StrategyConfig(
+                                            strategyType = strategyType,
+                                            tradeMode = tradeMode,
+                                            emaFastPeriod = fastEma.toIntOrNull() ?: 20,
+                                            emaSlowPeriod = slowEma.toIntOrNull() ?: 50,
+                                            adxThreshold = adxMin.toDoubleOrNull() ?: 25.0,
+                                            atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
+                                            riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0,
+                                            breakEvenTriggerR = breakEvenTriggerR.toDoubleOrNull() ?: 0.8,
+                                            trailingStopDistanceAtr = trailingStopDistanceAtr.toDoubleOrNull() ?: 1.0
+                                        )
+                                        val auditRes = aiManager.auditStrategy(currentStrategyConfig)
+                                        aiStrategyAudit = auditRes.getOrNull()
+                                        isAuditingStrategy = false
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Re-run AI Diagnostics", fontSize = 12.sp, color = CyanLight)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // AI Strategy Auto-Fine-Tuner & Profit Maximizer
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, GoldHero.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().testTag("ai_strategy_fine_tuner_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = GoldHero, modifier = Modifier.size(20.dp))
+                            Text("AI Strategy Auto-Fine-Tuning", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        }
+
+                        if (aiOptimization != null) {
+                            Surface(
+                                color = EmeraldContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    "+${"%.1f".format(aiOptimization!!.expectedProfitBoostPct)}% Profit Gain",
+                                    fontWeight = FontWeight.Black,
+                                    color = EmeraldGain,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        "AI quantitatively diagnoses bottlenecks in ${strategyType.displayName}, dynamically calibrates indicators, and computes optimized parameters for maximum profitability and win-rate.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+
+                    if (appliedOptimizationNotice != null) {
+                        Surface(
+                            color = EmeraldContainer.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldGain, modifier = Modifier.size(16.dp))
+                                Text(appliedOptimizationNotice!!, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = TextPrimary)
+                            }
+                        }
+                    }
+
+                    if (aiOptimization == null && !isOptimizingStrategy) {
+                        Button(
+                            onClick = {
+                                isOptimizingStrategy = true
+                                appliedOptimizationNotice = null
+                                coroutineScope.launch {
+                                    val currentCfg = com.example.domain.model.StrategyConfig(
+                                        strategyType = strategyType,
+                                        tradeMode = tradeMode,
+                                        emaFastPeriod = fastEma.toIntOrNull() ?: 20,
+                                        emaSlowPeriod = slowEma.toIntOrNull() ?: 50,
+                                        adxThreshold = adxMin.toDoubleOrNull() ?: 25.0,
+                                        atrSlMultiplier = atrSlMultiplier.toDoubleOrNull() ?: 1.5,
+                                        riskRewardRatio = rrRatio.toDoubleOrNull() ?: 2.0,
+                                        breakEvenTriggerR = breakEvenTriggerR.toDoubleOrNull() ?: 0.8,
+                                        trailingStopDistanceAtr = trailingStopDistanceAtr.toDoubleOrNull() ?: 1.0
+                                    )
+                                    val optRes = aiManager.optimizeAndFineTuneStrategy(currentCfg)
+                                    aiOptimization = optRes.getOrNull()
+                                    isOptimizingStrategy = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GoldHero),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("run_ai_tuning_btn")
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("ANALYZE & FINE-TUNE STRATEGY", fontWeight = FontWeight.Black, color = Color.Black, fontSize = 13.sp)
+                        }
+                    } else if (isOptimizingStrategy) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(color = GoldHero, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Computing Quant Parameter Optimization...", style = MaterialTheme.typography.bodySmall, color = GoldHero)
+                        }
+                    } else if (aiOptimization != null) {
+                        val opt = aiOptimization!!
+
+                        // Expected Outcomes Grid
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                color = SurfaceVariantDark,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("PROFIT FACTOR", fontSize = 10.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
+                                    Text("${"%.2f".format(opt.currentProfitFactor)} → ${"%.2f".format(opt.targetProfitFactor)}", fontSize = 14.sp, fontWeight = FontWeight.Black, color = EmeraldGain)
+                                }
+                            }
+                            Surface(
+                                color = SurfaceVariantDark,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("EXP. WIN RATE", fontSize = 10.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
+                                    Text("${"%.1f".format(opt.expectedWinRate)}%", fontSize = 14.sp, fontWeight = FontWeight.Black, color = CyanLight)
+                                }
+                            }
+                            Surface(
+                                color = SurfaceVariantDark,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("SHARPE RATIO", fontSize = 10.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
+                                    Text("${"%.2f".format(opt.expectedSharpe)}", fontSize = 14.sp, fontWeight = FontWeight.Black, color = GoldHero)
+                                }
+                            }
+                        }
+
+                        // Identified Bottlenecks
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Identified Bottlenecks:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CrimsonLoss)
+                            opt.detectedBottlenecks.forEach { b ->
+                                Text("⚠ $b", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                            }
+                        }
+
+                        // Parameter Optimizations List
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Tuned Parameter Adjustments:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = CyanLight)
+                            opt.parameterOptimizations.forEach { (param, change) ->
+                                Surface(
+                                    color = SurfaceVariantDark,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(param, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                                        Text(change, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = EmeraldGain)
+                                    }
+                                }
+                            }
+                        }
+
+                        // 1-Tap Apply Optimized Parameters Button
+                        Button(
+                            onClick = {
+                                val newCfg = opt.appliedConfig
+                                fastEma = newCfg.emaFastPeriod.toString()
+                                slowEma = newCfg.emaSlowPeriod.toString()
+                                adxMin = newCfg.adxThreshold.toString()
+                                atrSlMultiplier = newCfg.atrSlMultiplier.toString()
+                                rrRatio = newCfg.riskRewardRatio.toString()
+                                breakEvenTriggerR = newCfg.breakEvenTriggerR.toString()
+                                breakEvenBufferPips = newCfg.breakEvenBufferPips.toString()
+                                trailingStopDistanceAtr = newCfg.trailingStopDistanceAtr.toString()
+                                breakEvenEnabled = newCfg.breakEvenEnabled
+                                trailingStopEnabled = newCfg.trailingStopEnabled
+                                earlyExitOnTrendReversal = newCfg.earlyExitOnTrendReversal
+
+                                coroutineScope.launch {
+                                    val current = repository.getOrCreateConfig()
+                                    val updated = current.copy(
+                                        emaFastPeriod = newCfg.emaFastPeriod,
+                                        emaSlowPeriod = newCfg.emaSlowPeriod,
+                                        adxThreshold = newCfg.adxThreshold,
+                                        atrSlMultiplier = newCfg.atrSlMultiplier,
+                                        riskRewardRatio = newCfg.riskRewardRatio,
+                                        breakEvenTriggerR = newCfg.breakEvenTriggerR,
+                                        breakEvenBufferPips = newCfg.breakEvenBufferPips,
+                                        trailingStopDistanceAtr = newCfg.trailingStopDistanceAtr,
+                                        breakEvenEnabled = newCfg.breakEvenEnabled,
+                                        trailingStopEnabled = newCfg.trailingStopEnabled,
+                                        earlyExitOnTrendReversal = newCfg.earlyExitOnTrendReversal,
+                                        adaptiveTpEnabled = newCfg.adaptiveTpEnabled,
+                                        adaptiveSlEnabled = newCfg.adaptiveSlEnabled,
+                                        adaptiveBeEnabled = newCfg.adaptiveBeEnabled
+                                    )
+                                    repository.updateConfig(updated)
+                                    appliedOptimizationNotice = "AI Optimized Parameters applied to Live Bot Engine!"
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldGain),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("apply_ai_tuning_btn")
+                        ) {
+                            Icon(Icons.Default.TrendingUp, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("APPLY AI OPTIMIZED PARAMETERS", fontWeight = FontWeight.Black, color = Color.Black, fontSize = 13.sp)
                         }
                     }
                 }
