@@ -1,8 +1,7 @@
 package com.example.trading
 
 import com.example.broker.BrokerAdapter
-import com.example.data.local.RoomPosition
-import com.example.data.repository.IRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.Position
 import com.example.domain.model.TradeDirection
@@ -29,29 +28,15 @@ sealed class ReconciliationResult {
 }
 
 class PositionReconciler(
-    private val repository: IRepository,
+    private val repository: FirestoreRepository,
     private val brokerAdapter: BrokerAdapter
 ) {
 
     private val positionMatchTolerance = 0.0001
 
-    private fun RoomPosition.toDomain() = Position(
-        id = id, symbol = symbol, direction = TradeDirection.valueOf(direction), volume = volume,
-        entryPrice = entryPrice, currentPrice = currentPrice, stopLoss = stopLoss,
-        takeProfit = takeProfit, unrealizedProfit = unrealizedProfit, unrealizedR = unrealizedR,
-        openedAt = openedAt
-    )
-
-    private fun Position.toRoom() = RoomPosition(
-        id = id, symbol = symbol, direction = direction.name, volume = volume,
-        entryPrice = entryPrice, currentPrice = currentPrice, stopLoss = stopLoss,
-        takeProfit = takeProfit, unrealizedProfit = unrealizedProfit, unrealizedR = unrealizedR,
-        openedAt = openedAt, mode = "PAPER"
-    )
-
     suspend fun reconcile(): ReconciliationResult = withContext(Dispatchers.IO) {
         return@withContext try {
-            val localPositions = repository.getOpenPositions().map { it.toDomain() }
+            val localPositions = repository.getOpenPositions()
             val brokerPositions = brokerAdapter.getPositions()
 
             val matchResult = matchPositions(localPositions, brokerPositions)
@@ -89,7 +74,7 @@ class PositionReconciler(
 
     suspend fun reconcileAndRepair(): ReconciliationResult = withContext(Dispatchers.IO) {
         return@withContext try {
-            val localPositions = repository.getOpenPositions().map { it.toDomain() }
+            val localPositions = repository.getOpenPositions()
             val brokerPositions = brokerAdapter.getPositions()
 
             val matchResult = matchPositions(localPositions, brokerPositions)
@@ -212,7 +197,7 @@ class PositionReconciler(
 
         matchResult.unmatchedBroker.forEach { brokerPos ->
             val position = brokerPos.copy(id = brokerPos.id)
-            repository.recordPosition(position.toRoom())
+            repository.recordPosition(position)
             addedFromBroker.add(position)
         }
 
@@ -229,7 +214,7 @@ class PositionReconciler(
                     stopLoss = brokerPos.stopLoss,
                     takeProfit = brokerPos.takeProfit
                 )
-                repository.recordPosition(updatedPos.toRoom())
+                repository.recordPosition(updatedPos)
                 updatedLocal.add(updatedPos)
             }
         }

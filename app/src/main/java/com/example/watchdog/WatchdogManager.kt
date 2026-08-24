@@ -1,6 +1,6 @@
 package com.example.watchdog
 
-import com.example.data.repository.IRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.StateMachineState
 import com.example.notifications.AppNotificationManager
@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class WatchdogManager(
-    private val repository: IRepository,
+    private val repository: FirestoreRepository,
     private val stateMachine: StateMachine,
     private val notificationManager: AppNotificationManager,
     private val onRecoveryRequested: suspend () -> Unit

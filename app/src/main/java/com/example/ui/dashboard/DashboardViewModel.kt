@@ -1,28 +1,29 @@
 package com.example.ui.dashboard
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.local.*
-import com.example.data.repository.TradingRepository
+import com.example.EdgeTraderApp
+import com.example.data.entities.BotConfigEntity
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.*
 import com.example.domain.risk.AdvancedRiskManager
 import com.example.domain.risk.PortfolioRiskMetrics
+import com.example.domain.risk.SizingMethod
+import com.example.service.TradingForegroundService
 import com.example.trading.TradingEngine
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
-@HiltViewModel
-class DashboardViewModel @Inject constructor(
-    private val repository: TradingRepository,
-    private val engine: TradingEngine,
-    private val riskManager: AdvancedRiskManager
+class DashboardViewModel(
+    private val context: Context = EdgeTraderApp.instance,
+    private val repository: FirestoreRepository = EdgeTraderApp.instance.firestoreRepository,
+    private val engine: TradingEngine = EdgeTraderApp.instance.tradingEngine
 ) : ViewModel() {
 
-    val config: StateFlow<RoomConfig?> = flow {
-        emit(repository.getOrCreateConfig())
-    }.stateIn(
+    private val riskManager = AdvancedRiskManager()
+
+    val config: StateFlow<BotConfigEntity?> = repository.configFlow.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         null
@@ -30,7 +31,6 @@ class DashboardViewModel @Inject constructor(
 
     val stateMachineState: StateFlow<StateMachineState> = engine.stateMachine.currentState
     val stateReason: StateFlow<String> = engine.stateMachine.stateReason
-    val stateHistory: StateFlow<List<StateTransitionRecord>> = engine.stateMachine.stateHistory
     val connectionState: StateFlow<ConnectionState> = engine.connectionState
     val accountInfo: StateFlow<AccountInfo> = engine.currentAccount
     val activeQuotes: StateFlow<Map<String, Quote>> = engine.activeQuotes
@@ -39,23 +39,29 @@ class DashboardViewModel @Inject constructor(
     val circuitBreakerCount: StateFlow<Int> = engine.stateMachine.circuitBreakerCount
     val isCircuitOpen: StateFlow<Boolean> = engine.stateMachine.isCircuitOpen
 
-    val openPositions: StateFlow<List<RoomPosition>> = repository.openPositionsFlow.stateIn(
+    val openPositions: StateFlow<List<Position>> = repository.openPositionsFlow.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         emptyList()
     )
 
-    val recentTrades: StateFlow<List<RoomTrade>> = repository.allTradesFlow.stateIn(
+    val recentTrades: StateFlow<List<Trade>> = repository.allTradesFlow.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         emptyList()
     )
 
-    val stateTransitions: StateFlow<List<RoomStateTransition>> = repository.getStateTransitionsFlow().stateIn(
+    val brokerAccounts: StateFlow<List<BrokerAccount>> = engine.accountManager?.accounts?.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         emptyList()
-    )
+    ) ?: MutableStateFlow(emptyList())
+
+    val activeBrokerAccount: StateFlow<BrokerAccount?> = engine.accountManager?.activeAccount?.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        null
+    ) ?: MutableStateFlow(null)
 
     private val _portfolioRisk = MutableStateFlow<PortfolioRiskMetrics?>(null)
     val portfolioRisk: StateFlow<PortfolioRiskMetrics?> = _portfolioRisk.asStateFlow()
@@ -80,39 +86,33 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private suspend fun updatePortfolioRisk(positions: List<RoomPosition>) {
+    private fun updatePortfolioRisk(positions: List<Position>) {
         val account = accountInfo.value
         val quotes = activeQuotes.value
-        val domainPositions = positions.map { pos ->
-            Position(
-                id = pos.id,
-                symbol = pos.symbol,
-                direction = TradeDirection.valueOf(pos.direction),
-                volume = pos.volume,
-                entryPrice = pos.entryPrice,
-                currentPrice = pos.currentPrice,
-                stopLoss = pos.stopLoss,
-                takeProfit = pos.takeProfit,
-                unrealizedProfit = pos.unrealizedProfit,
-                unrealizedR = pos.unrealizedR,
-                openedAt = pos.openedAt,
-                mode = TradingMode.valueOf(pos.mode)
-            )
-        }
-        val metrics = riskManager.calculatePortfolioRisk(domainPositions, account, quotes)
+        val metrics = riskManager.calculatePortfolioRisk(positions, account, quotes)
         _portfolioRisk.value = metrics
 
-        if (riskManager.shouldForceCloseAll(account)) {
-            engine.closeAllPositions("Max drawdown breach - auto close")
+        viewModelScope.launch {
+            if (riskManager.shouldForceCloseAll(account)) {
+                engine.closeAllPositions("Max drawdown breach - auto close")
+            }
+        }
+    }
+
+    fun switchBrokerAccount(accountId: String) {
+        viewModelScope.launch {
+            engine.switchBrokerAccount(accountId)
         }
     }
 
     fun toggleTradingBot(enable: Boolean) {
         viewModelScope.launch {
+            val cfg = repository.getOrCreateConfig()
+            repository.updateConfig(cfg.copy(isBotEnabled = enable, emergencyStop = false))
             if (enable) {
-                engine.start()
+                TradingForegroundService.startService(context)
             } else {
-                engine.stop("User stopped bot")
+                TradingForegroundService.stopService(context)
             }
         }
     }
@@ -120,6 +120,7 @@ class DashboardViewModel @Inject constructor(
     fun triggerEmergencyStop() {
         viewModelScope.launch {
             engine.triggerEmergencyStop("User Emergency Stop triggered from Dashboard")
+            TradingForegroundService.stopService(context)
         }
     }
 

@@ -5,7 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import com.example.data.repository.IRepository
+import com.example.data.firestore.FirestoreRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.Signal
 import com.example.domain.model.Trade
@@ -140,7 +140,7 @@ class AndroidNotifier(private val context: Context) {
 
 class TelegramNotifier(
     private val secureStorage: SecureStorage,
-    private val repository: IRepository
+    private val repository: FirestoreRepository
 ) {
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
