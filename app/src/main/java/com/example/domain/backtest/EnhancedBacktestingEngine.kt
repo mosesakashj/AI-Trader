@@ -289,6 +289,9 @@ class EnhancedBacktestingEngine {
         val grossLoss = abs(losses.sumOf { it.profit })
         val profitFactor = if (grossLoss > 0) grossProfit / grossLoss else if (grossProfit > 0) Double.MAX_VALUE else 0.0
 
+        val averageWin = if (wins.isNotEmpty()) wins.sumOf { it.profit } / wins.size else 0.0
+        val averageLoss = if (losses.isNotEmpty()) abs(losses.sumOf { it.profit }) / losses.size else 0.0
+
         return BacktestResult(
             symbol = symbolConfig.symbol,
             timeframe = Timeframe.M15,
@@ -300,12 +303,15 @@ class EnhancedBacktestingEngine {
             totalProfitLoss = totalProfit,
             profitFactor = profitFactor,
             sharpeRatio = calculateSharpe(trades),
+            recoveryFactor = if (maxDrawdown > 0) totalProfit / (peakEquity * maxDrawdown / 100.0) else 0.0,
             maxDrawdownAmount = peakEquity - (peakEquity * (1 - maxDrawdown / 100.0)),
             maxDrawdownPercent = maxDrawdown,
             averageR = calculateAverageR(trades),
             expectancy = if (trades.isNotEmpty()) totalProfit / trades.size else 0.0,
             maxConsecutiveLosses = calculateMaxConsecutiveLosses(trades),
-            recoveryFactor = if (maxDrawdown > 0) totalProfit / (peakEquity * maxDrawdown / 100.0) else 0.0,
+            maxConsecutiveWins = calculateMaxConsecutiveWins(trades),
+            averageWin = averageWin,
+            averageLoss = averageLoss,
             trades = trades,
             equityCurve = buildEquityCurve(trades, 10000.0)
         )
@@ -381,7 +387,7 @@ class EnhancedBacktestingEngine {
         if (trades.size < 2) return 0.0
         val returns = trades.map { it.profit / 10000.0 }
         val meanReturn = returns.average()
-        val stdDev = sqrt(returns.map { (it - meanReturn).pow(2) }.average())
+        val stdDev = sqrt(returns.map { val diff = it - meanReturn; diff * diff }.average())
         return if (stdDev > 0) meanReturn / stdDev * sqrt(252.0) else 0.0
     }
 
@@ -404,13 +410,28 @@ class EnhancedBacktestingEngine {
         return maxConsecutive
     }
 
+    private fun calculateMaxConsecutiveWins(trades: List<Trade>): Int {
+        var maxConsecutive = 0
+        var currentConsecutive = 0
+        for (trade in trades) {
+            if (trade.profit > 0) {
+                currentConsecutive++
+                if (currentConsecutive > maxConsecutive) maxConsecutive = currentConsecutive
+            } else {
+                currentConsecutive = 0
+            }
+        }
+        return maxConsecutive
+    }
+
     private fun buildEquityCurve(trades: List<Trade>, initialEquity: Double): List<Pair<Long, Double>> {
         val curve = mutableListOf<Pair<Long, Double>>()
         var equity = initialEquity
         curve.add(0L to equity)
         for (trade in trades) {
             equity += trade.profit
-            curve.add(trade.closedAt ?: trade.openedAt to equity)
+            val time = trade.closedAt ?: trade.openedAt
+            curve.add(time to equity)
         }
         return curve
     }
@@ -444,8 +465,8 @@ class EnhancedBacktestingEngine {
 
     private fun calculateParameterStability(windows: List<WalkForwardWindow>): Double {
         if (windows.size < 2) return 1.0
-        val emaFastValues = windows.map { it.optimizedParams.emaFastPeriod }
-        val emaSlowValues = windows.map { it.optimizedParams.emaSlowPeriod }
+        val emaFastValues = windows.map { it.optimizedParams.emaFastPeriod.toDouble() }
+        val emaSlowValues = windows.map { it.optimizedParams.emaSlowPeriod.toDouble() }
         val adxValues = windows.map { it.optimizedParams.adxThreshold }
 
         val emaFastVariance = emaFastValues.variance()
@@ -464,8 +485,6 @@ class EnhancedBacktestingEngine {
     private fun List<Double>.variance(): Double {
         if (size < 2) return 0.0
         val mean = average()
-        return map { (it - mean).pow(2) }.average()
+        return map { val diff = it - mean; diff * diff }.average()
     }
-
-    private fun Double.pow(n: Int): Double = kotlin.math.pow(n.toDouble())
 }

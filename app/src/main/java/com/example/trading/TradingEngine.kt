@@ -10,6 +10,7 @@ import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.model.*
 import com.example.domain.model.toClosedTrade
 import com.example.domain.risk.RiskManager
+import com.example.domain.risk.SizingMethod
 import com.example.domain.strategy.*
 import com.example.notifications.AppNotificationManager
 import com.example.watchdog.WatchdogManager
@@ -1035,7 +1036,7 @@ class TradingEngine(
 
     suspend fun triggerEmergencyStop(reason: String = "User Emergency Stop triggered") {
         val config = repository.getOrCreateBotConfig()
-        repository.updateConfig(config.copy(emergencyStop = true, isBotEnabled = false))
+        repository.updateBotConfig(config.copy(emergencyStop = true, isBotEnabled = false))
         stateMachine.forceState(StateMachineState.PAUSED, "EMERGENCY STOP: $reason")
         notificationManager.notifyEmergencyStop(reason)
         repository.logEvent(LogLevel.CRITICAL, "TradingEngine", "EMERGENCY_STOP", reason)
@@ -1072,13 +1073,17 @@ class TradingEngine(
 
     suspend fun resetSafeMode() {
         val config = repository.getOrCreateBotConfig()
-        repository.updateConfig(config.copy(safeMode = false, safeModeReason = ""))
+        repository.updateBotConfig(config.copy(safeMode = false, safeModeReason = ""))
         stateMachine.forceState(StateMachineState.READY, "Safe Mode cleared by operator")
         repository.logEvent(LogLevel.INFO, "TradingEngine", "SAFE_MODE_CLEARED", "Operator cleared safe mode")
     }
 
     suspend fun reconcilePositions(): ReconciliationResult {
         return positionReconciler.reconcileAndRepair()
+    }
+
+    suspend fun recoverState() {
+        recoverEngine()
     }
 
     private suspend fun recoverEngine() {

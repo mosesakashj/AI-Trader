@@ -27,5 +27,20 @@ abstract class EdgeTraderDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "edgetrader.db"
+
+        @Volatile
+        private var INSTANCE: EdgeTraderDatabase? = null
+
+        fun getDatabase(context: Context): EdgeTraderDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    EdgeTraderDatabase::class.java,
+                    DATABASE_NAME
+                ).fallbackToDestructiveMigration().build()
+                INSTANCE = instance
+                instance
+            }
+        }
     }
 }

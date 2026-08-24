@@ -13,7 +13,7 @@ data class RateLimitInfo(
     var tokenCount: Long = 0,
     val dailyLimit: Int = 1000,
     val tokenLimit: Long = 100_000,
-    val windowStart: Long = System.currentTimeMillis()
+    var windowStart: Long = System.currentTimeMillis()
 )
 
 data class CacheEntry(
@@ -47,6 +47,10 @@ class AiProviderManager(
     }
 
     suspend fun analyzeWithFailover(request: AiAnalysisRequest): Result<AiAnalysisResponse> {
+        if (providers.isEmpty()) {
+            return Result.failure(IllegalStateException("No AI providers configured"))
+        }
+
         val cacheKey = buildCacheKey(request)
         responseCache[cacheKey]?.let { cached ->
             if (!cached.isExpired()) {
@@ -102,6 +106,10 @@ class AiProviderManager(
     }
 
     suspend fun chatWithFailover(request: AiChatRequest): Result<AiChatResponse> {
+        if (providers.isEmpty()) {
+            return Result.failure(IllegalStateException("No AI providers configured"))
+        }
+
         var lastException: Exception? = null
         val startIndex = _activeProviderIndex.value
 
@@ -150,11 +158,11 @@ class AiProviderManager(
     }
 
     private fun estimateTokens(request: AiAnalysisRequest): Int {
-        return (request.candleData.length + request.indicatorData.length + 500) / 4
+        return (request.recentCandles.size * 60 + request.indicators.size * 20 + 500) / 4
     }
 
     private fun buildCacheKey(request: AiAnalysisRequest): String {
-        return "${request.symbol}_${request.timeframe}_${request.candleData.hashCode()}"
+        return "${request.symbol}_${request.timeframe}_${request.currentPrice}_${request.recentCandles.hashCode()}"
     }
 
     fun clearCache() {

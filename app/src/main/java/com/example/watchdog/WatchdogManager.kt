@@ -61,14 +61,14 @@ class WatchdogManager(
     fun recordEngineHeartbeat() {
         lastEngineHeartbeat.set(System.currentTimeMillis())
         scope.launch {
-            repository.updateHeartbeat("TradingEngine", "HEALTHY", "Heartbeat received")
+            repository.logEvent(LogLevel.INFO, "TradingEngine", "HEARTBEAT", "Heartbeat received")
         }
     }
 
     fun recordMarketDataHeartbeat() {
         lastMarketDataHeartbeat.set(System.currentTimeMillis())
         scope.launch {
-            repository.updateHeartbeat("MarketData", "HEALTHY", "Tick received")
+            repository.logEvent(LogLevel.INFO, "MarketData", "HEARTBEAT", "Tick received")
         }
     }
 

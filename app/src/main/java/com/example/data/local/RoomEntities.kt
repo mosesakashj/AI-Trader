@@ -3,6 +3,12 @@ package com.example.data.local
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.ColumnInfo
+import com.example.domain.model.CloseReason
+import com.example.domain.model.Position
+import com.example.domain.model.Trade
+import com.example.domain.model.TradeDirection
+import com.example.domain.model.TradeStatus
+import com.example.domain.model.TradingMode
 
 @Entity(tableName = "room_trades")
 data class RoomTrade(
@@ -93,4 +99,44 @@ data class RoomConfig(
     @PrimaryKey val id: String = "primary_config",
     val configJson: String,
     val updatedAt: Long = System.currentTimeMillis()
+)
+
+fun RoomTrade.toDomain(): Trade = Trade(
+    id = id,
+    brokerOrderId = brokerOrderId,
+    brokerPositionId = brokerPositionId,
+    symbol = symbol,
+    direction = runCatching { TradeDirection.valueOf(direction) }.getOrDefault(TradeDirection.BUY),
+    volume = volume,
+    entryPrice = entryPrice,
+    stopLoss = stopLoss,
+    takeProfit = takeProfit,
+    riskAmount = riskAmount,
+    riskPercent = riskPercent,
+    rr = rr,
+    openedAt = openedAt,
+    closedAt = closedAt,
+    closePrice = closePrice,
+    profit = profit,
+    profitR = profitR,
+    status = runCatching { TradeStatus.valueOf(status) }.getOrDefault(TradeStatus.CLOSED),
+    closeReason = closeReason?.let { runCatching { CloseReason.valueOf(it) }.getOrNull() },
+    strategyVersion = strategyVersion,
+    mode = runCatching { TradingMode.valueOf(mode) }.getOrDefault(TradingMode.PAPER),
+    slippage = slippage
+)
+
+fun RoomPosition.toDomain(): Position = Position(
+    id = id,
+    symbol = symbol,
+    direction = runCatching { TradeDirection.valueOf(direction) }.getOrDefault(TradeDirection.BUY),
+    volume = volume,
+    entryPrice = entryPrice,
+    currentPrice = currentPrice,
+    stopLoss = stopLoss,
+    takeProfit = takeProfit,
+    unrealizedProfit = unrealizedProfit,
+    unrealizedR = unrealizedR,
+    openedAt = openedAt,
+    mode = runCatching { TradingMode.valueOf(mode) }.getOrDefault(TradingMode.PAPER)
 )

@@ -471,11 +471,9 @@ class AdvancedRiskManager(
     private fun List<Double>.standardDeviation(): Double {
         if (size < 2) return 0.0
         val mean = average()
-        val variance = map { (it - mean).pow(2) }.average()
+        val variance = map { val diff = it - mean; diff * diff }.average()
         return sqrt(variance)
     }
-
-    private fun Double.pow(n: Int): Double = kotlin.math.pow(n.toDouble())
 }
 
 enum class SizingMethod {
