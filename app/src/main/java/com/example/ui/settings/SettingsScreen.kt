@@ -853,7 +853,7 @@ fun SettingsScreen(
                                 isTestingTelegram = true
                                 secureStorage.saveTelegramToken(telegramToken)
                                 secureStorage.saveTelegramChatId(telegramChatId)
-                                val notifier = TelegramNotifier(secureStorage, repository)
+                                val notifier = TelegramNotifier(secureStorage, EdgeTraderApp.instance.tradingRepository)
                                 notifier.sendTelegramMessage("<b>🔔 EdgeTrader Test Notification</b>\nTelegram integration verified successfully!") { success, msg ->
                                     isTestingTelegram = false
                                     testResult = if (success) "✅ Notification sent successfully!" else "❌ Error: $msg"

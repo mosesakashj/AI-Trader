@@ -5,25 +5,26 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.EdgeTraderApp
 import com.example.data.entities.BotConfigEntity
-import com.example.data.firestore.FirestoreRepository
+import com.example.data.local.*
+import com.example.data.repository.TradingRepository
 import com.example.domain.model.*
 import com.example.domain.risk.AdvancedRiskManager
 import com.example.domain.risk.PortfolioRiskMetrics
 import com.example.domain.risk.SizingMethod
-import com.example.service.TradingForegroundService
+import com.example.trading.StateTransitionRecord
 import com.example.trading.TradingEngine
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class DashboardViewModel(
-    private val context: Context = EdgeTraderApp.instance,
-    private val repository: FirestoreRepository = EdgeTraderApp.instance.firestoreRepository,
-    private val engine: TradingEngine = EdgeTraderApp.instance.tradingEngine
+    private val repository: TradingRepository = EdgeTraderApp.instance.tradingRepository,
+    private val engine: TradingEngine = EdgeTraderApp.instance.tradingEngine,
+    private val riskManager: AdvancedRiskManager = EdgeTraderApp.instance.riskManager
 ) : ViewModel() {
 
-    private val riskManager = AdvancedRiskManager()
-
-    val config: StateFlow<BotConfigEntity?> = repository.configFlow.stateIn(
+    val config: StateFlow<BotConfigEntity?> = flow {
+        emit(repository.getOrCreateBotConfig())
+    }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         null
@@ -65,6 +66,12 @@ class DashboardViewModel(
 
     private val _portfolioRisk = MutableStateFlow<PortfolioRiskMetrics?>(null)
     val portfolioRisk: StateFlow<PortfolioRiskMetrics?> = _portfolioRisk.asStateFlow()
+
+    private val _brokerAccounts = MutableStateFlow<List<BrokerAccount>>(emptyList())
+    val brokerAccounts: StateFlow<List<BrokerAccount>> = _brokerAccounts.asStateFlow()
+
+    private val _activeBrokerAccount = MutableStateFlow<BrokerAccount?>(null)
+    val activeBrokerAccount: StateFlow<BrokerAccount?> = _activeBrokerAccount.asStateFlow()
 
     private val _sizingMethod = MutableStateFlow(SizingMethod.FIXED_FRACTIONAL)
     val sizingMethod: StateFlow<SizingMethod> = _sizingMethod.asStateFlow()
@@ -148,5 +155,9 @@ class DashboardViewModel(
 
     fun setSizingMethod(method: SizingMethod) {
         _sizingMethod.value = method
+    }
+
+    fun switchBrokerAccount(accountId: String) {
+        // Switch active broker account configuration
     }
 }

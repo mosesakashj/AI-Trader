@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.broker.MarketScheduleUtils
 import com.example.data.api.MarketInsightsRepository
+import com.example.data.local.*
 import com.example.domain.model.*
 import com.example.ui.components.*
 import com.example.ui.theme.*
@@ -52,7 +53,7 @@ fun DashboardScreen(
     LaunchedEffect(Unit) { insightsRepo.refreshAll() }
 
     val allTrades by viewModel.recentTrades.collectAsStateWithLifecycle()
-    val perfStats = remember(allTrades) { computePerformanceStats(allTrades) }
+    val perfStats = remember(allTrades) { computePerformanceStats(allTrades.map { it.toDomain() }) }
 
     val brokerAccounts by viewModel.brokerAccounts.collectAsStateWithLifecycle()
     val activeBrokerAccount by viewModel.activeBrokerAccount.collectAsStateWithLifecycle()
@@ -537,13 +538,14 @@ fun DashboardScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        val isBuy = pos.direction.equals(TradeDirection.BUY.name, ignoreCase = true)
                                         Surface(
-                                            color = if (pos.direction == TradeDirection.BUY) EmeraldContainer else CrimsonContainer,
+                                            color = if (isBuy) EmeraldContainer else CrimsonContainer,
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
                                             Text(
-                                                text = pos.direction.name,
-                                                color = if (pos.direction == TradeDirection.BUY) EmeraldDark else CrimsonDark,
+                                                text = pos.direction,
+                                                color = if (isBuy) EmeraldDark else CrimsonDark,
                                                 fontWeight = FontWeight.Black,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

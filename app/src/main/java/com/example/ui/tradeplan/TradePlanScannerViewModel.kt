@@ -6,9 +6,11 @@ import com.example.EdgeTraderApp
 import com.example.domain.model.*
 import com.example.trading.TradingEngine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -16,9 +18,26 @@ class TradePlanScannerViewModel(
     private val engine: TradingEngine = EdgeTraderApp.instance.tradingEngine
 ) : ViewModel() {
 
-    private val repository = EdgeTraderApp.instance.firestoreRepository
+    private val repository = EdgeTraderApp.instance.tradingRepository
 
-    val openPositions = repository.openPositionsFlow
+    val openPositions: Flow<List<Position>> = repository.openPositionsFlow.map { list ->
+        list.map { pos ->
+            Position(
+                id = pos.id,
+                symbol = pos.symbol,
+                direction = runCatching { TradeDirection.valueOf(pos.direction) }.getOrDefault(TradeDirection.BUY),
+                volume = pos.volume,
+                entryPrice = pos.entryPrice,
+                currentPrice = pos.currentPrice,
+                stopLoss = pos.stopLoss,
+                takeProfit = pos.takeProfit,
+                unrealizedProfit = pos.unrealizedProfit,
+                unrealizedR = pos.unrealizedR,
+                openedAt = pos.openedAt,
+                mode = runCatching { TradingMode.valueOf(pos.mode) }.getOrDefault(TradingMode.PAPER)
+            )
+        }
+    }
 
     private val _tradePlans = MutableStateFlow<List<TradePlan>>(emptyList())
     val tradePlans: StateFlow<List<TradePlan>> = _tradePlans.asStateFlow()
@@ -150,7 +169,7 @@ class TradePlanScannerViewModel(
 
     private suspend fun buildStrategyConfig(strategyType: StrategyType): StrategyConfig {
         val config = runCatching {
-            engine.repository.getOrCreateConfig()
+            repository.getOrCreateBotConfig()
         }.getOrNull()
 
         val tradeMode = try {

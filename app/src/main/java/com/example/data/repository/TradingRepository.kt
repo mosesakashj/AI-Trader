@@ -6,11 +6,8 @@ import com.example.domain.model.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONObject
-import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
-class TradingRepository @Inject constructor(
+class TradingRepository(
     private val tradeDao: TradeDao,
     private val positionDao: PositionDao,
     private val signalDao: SignalDao,
@@ -207,51 +204,51 @@ class TradingRepository @Inject constructor(
 
     // ─── Trades ───────────────────────────────────────────────────────────
 
-    val allTradesFlow: Flow<List<RoomTrade>> = tradeDao.getAllTradesFlow()
+    override val allTradesFlow: Flow<List<RoomTrade>> = tradeDao.getAllTradesFlow()
 
-    suspend fun getAllTrades(): List<RoomTrade> = tradeDao.getAllTrades()
+    override suspend fun getAllTrades(): List<RoomTrade> = tradeDao.getAllTrades()
 
-    suspend fun recordTrade(trade: RoomTrade) = tradeDao.insertTrade(trade)
+    override suspend fun recordTrade(trade: RoomTrade) = tradeDao.insertTrade(trade)
 
-    suspend fun updateTrade(trade: RoomTrade) = tradeDao.updateTrade(trade)
+    override suspend fun updateTrade(trade: RoomTrade) = tradeDao.updateTrade(trade)
 
-    suspend fun getTradeById(id: String): RoomTrade? = tradeDao.getTradeById(id)
+    override suspend fun getTradeById(id: String): RoomTrade? = tradeDao.getTradeById(id)
 
-    suspend fun getTradesCountForDay(dayStart: Long, dayEnd: Long): Int =
+    override suspend fun getTradesCountForDay(dayStart: Long, dayEnd: Long): Int =
         tradeDao.getTradesCountForDay(dayStart, dayEnd)
 
     // ─── Positions ────────────────────────────────────────────────────────
 
-    val openPositionsFlow: Flow<List<RoomPosition>> = positionDao.getOpenPositionsFlow()
+    override val openPositionsFlow: Flow<List<RoomPosition>> = positionDao.getOpenPositionsFlow()
 
-    suspend fun getOpenPositions(): List<RoomPosition> = positionDao.getOpenPositions()
+    override suspend fun getOpenPositions(): List<RoomPosition> = positionDao.getOpenPositions()
 
-    suspend fun recordPosition(position: RoomPosition) = positionDao.insertPosition(position)
+    override suspend fun recordPosition(position: RoomPosition) = positionDao.insertPosition(position)
 
-    suspend fun updatePosition(position: RoomPosition) = positionDao.updatePosition(position)
+    override suspend fun updatePosition(position: RoomPosition) = positionDao.updatePosition(position)
 
-    suspend fun removePosition(id: String) = positionDao.deletePosition(id)
+    override suspend fun removePosition(id: String) = positionDao.deletePosition(id)
 
-    suspend fun getPositionsBySymbol(symbol: String): List<RoomPosition> =
+    override suspend fun getPositionsBySymbol(symbol: String): List<RoomPosition> =
         positionDao.getPositionsBySymbol(symbol)
 
     // ─── Signals ──────────────────────────────────────────────────────────
 
-    val recentSignalsFlow: Flow<List<RoomSignal>> = signalDao.getRecentSignalsFlow()
+    override val recentSignalsFlow: Flow<List<RoomSignal>> = signalDao.getRecentSignalsFlow()
 
-    suspend fun recordSignal(signal: RoomSignal) = signalDao.insertSignal(signal)
+    override suspend fun recordSignal(signal: RoomSignal) = signalDao.insertSignal(signal)
 
     // ─── System Events ────────────────────────────────────────────────────
 
-    val systemLogsFlow: Flow<List<RoomSystemEvent>> = systemEventDao.getSystemLogsFlow()
+    override val systemLogsFlow: Flow<List<RoomSystemEvent>> = systemEventDao.getSystemLogsFlow()
 
-    suspend fun logEvent(
+    override suspend fun logEvent(
         level: LogLevel,
         component: String,
         event: String,
         message: String,
-        symbol: String? = null,
-        correlationId: String = java.util.UUID.randomUUID().toString().take(8)
+        symbol: String?,
+        correlationId: String
     ) {
         val entity = RoomSystemEvent(
             timestamp = System.currentTimeMillis(),
@@ -268,11 +265,11 @@ class TradingRepository @Inject constructor(
 
     // ─── State Transitions ────────────────────────────────────────────────
 
-    suspend fun recordStateTransition(
+    override suspend fun recordStateTransition(
         fromState: StateMachineState,
         toState: StateMachineState,
         reason: String,
-        durationMs: Long = 0
+        durationMs: Long
     ) {
         stateTransitionDao.insertTransition(
             RoomStateTransition(
@@ -285,10 +282,10 @@ class TradingRepository @Inject constructor(
         )
     }
 
-    suspend fun getStateTransitions(limit: Int = 100): List<RoomStateTransition> =
+    override suspend fun getStateTransitions(limit: Int): List<RoomStateTransition> =
         stateTransitionDao.getTransitions(limit)
 
-    fun getStateTransitionsFlow(limit: Int = 100): Flow<List<RoomStateTransition>> =
+    override fun getStateTransitionsFlow(limit: Int): Flow<List<RoomStateTransition>> =
         stateTransitionDao.getTransitionsFlow(limit)
 
     // ─── Helpers ──────────────────────────────────────────────────────────
@@ -299,7 +296,7 @@ class TradingRepository @Inject constructor(
             .replace(Regex("key=[^&\\s]+", RegexOption.IGNORE_CASE), "key=[REDACTED]")
     }
 
-    suspend fun clearHistory() {
+    override suspend fun clearHistory() {
         tradeDao.deleteAllTrades()
         positionDao.deleteAllPositions()
         systemEventDao.deleteAllEvents()

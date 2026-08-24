@@ -999,8 +999,8 @@ class TradingEngine(
     }
 
     suspend fun triggerEmergencyStop(reason: String = "User Emergency Stop triggered") {
-        val config = repository.getOrCreateConfig()
-        repository.updateConfig(config.copy(emergencyStop = true, isBotEnabled = false))
+        val config = repository.getOrCreateBotConfig()
+        repository.updateBotConfig(config.copy(emergencyStop = true, isBotEnabled = false))
         stateMachine.forceState(StateMachineState.PAUSED, "EMERGENCY STOP: $reason")
         notificationManager.notifyEmergencyStop(reason)
         repository.logEvent(LogLevel.CRITICAL, "TradingEngine", "EMERGENCY_STOP", reason)
@@ -1036,14 +1036,18 @@ class TradingEngine(
     }
 
     suspend fun resetSafeMode() {
-        val config = repository.getOrCreateConfig()
-        repository.updateConfig(config.copy(safeMode = false, safeModeReason = ""))
+        val config = repository.getOrCreateBotConfig()
+        repository.updateBotConfig(config.copy(safeMode = false, safeModeReason = ""))
         stateMachine.forceState(StateMachineState.READY, "Safe Mode cleared by operator")
         repository.logEvent(LogLevel.INFO, "TradingEngine", "SAFE_MODE_CLEARED", "Operator cleared safe mode")
     }
 
     suspend fun reconcilePositions(): ReconciliationResult {
         return positionReconciler.reconcileAndRepair()
+    }
+
+    suspend fun recoverState() {
+        recoverEngine()
     }
 
     private suspend fun recoverEngine() {
