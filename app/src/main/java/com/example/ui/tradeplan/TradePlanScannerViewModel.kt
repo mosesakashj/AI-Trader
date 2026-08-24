@@ -1,11 +1,9 @@
 package com.example.ui.tradeplan
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.EdgeTraderApp
 import com.example.domain.model.*
-import com.example.domain.strategy.TradingStrategy
 import com.example.trading.TradingEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +15,10 @@ import kotlinx.coroutines.withContext
 class TradePlanScannerViewModel(
     private val engine: TradingEngine = EdgeTraderApp.instance.tradingEngine
 ) : ViewModel() {
+
+    private val repository = EdgeTraderApp.instance.firestoreRepository
+
+    val openPositions = repository.openPositionsFlow
 
     private val _tradePlans = MutableStateFlow<List<TradePlan>>(emptyList())
     val tradePlans: StateFlow<List<TradePlan>> = _tradePlans.asStateFlow()
@@ -40,6 +42,21 @@ class TradePlanScannerViewModel(
 
     private val _filteredPlans = MutableStateFlow<List<TradePlan>>(emptyList())
     val filteredPlans: StateFlow<List<TradePlan>> = _filteredPlans.asStateFlow()
+
+    fun closePosition(position: Position) {
+        viewModelScope.launch {
+            try {
+                engine.closeSinglePosition(position.id, CloseReason.MANUAL)
+                _executionResult.value = ExecutionState.Success(
+                    "Closed ${position.symbol} ${position.direction.name}"
+                )
+            } catch (e: Exception) {
+                _executionResult.value = ExecutionState.Error(
+                    e.localizedMessage ?: "Failed to close position"
+                )
+            }
+        }
+    }
 
     fun scanAllPairs() {
         if (_isScanning.value) return
