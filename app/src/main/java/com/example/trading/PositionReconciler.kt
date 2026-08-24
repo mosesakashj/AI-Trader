@@ -1,7 +1,8 @@
 package com.example.trading
 
 import com.example.broker.BrokerAdapter
-import com.example.data.firestore.FirestoreRepository
+import com.example.data.local.RoomPosition
+import com.example.data.repository.IRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.Position
 import com.example.domain.model.TradeDirection
@@ -28,15 +29,29 @@ sealed class ReconciliationResult {
 }
 
 class PositionReconciler(
-    private val repository: FirestoreRepository,
+    private val repository: IRepository,
     private val brokerAdapter: BrokerAdapter
 ) {
 
-    private val positionMatchTolerance = 0.0001 // Price tolerance for matching
+    private val positionMatchTolerance = 0.0001
+
+    private fun RoomPosition.toDomain() = Position(
+        id = id, symbol = symbol, direction = TradeDirection.valueOf(direction), volume = volume,
+        entryPrice = entryPrice, currentPrice = currentPrice, stopLoss = stopLoss,
+        takeProfit = takeProfit, unrealizedProfit = unrealizedProfit, unrealizedR = unrealizedR,
+        openedAt = openedAt
+    )
+
+    private fun Position.toRoom() = RoomPosition(
+        id = id, symbol = symbol, direction = direction.name, volume = volume,
+        entryPrice = entryPrice, currentPrice = currentPrice, stopLoss = stopLoss,
+        takeProfit = takeProfit, unrealizedProfit = unrealizedProfit, unrealizedR = unrealizedR,
+        openedAt = openedAt, mode = "PAPER"
+    )
 
     suspend fun reconcile(): ReconciliationResult = withContext(Dispatchers.IO) {
         return@withContext try {
-            val localPositions = repository.getOpenPositions()
+            val localPositions = repository.getOpenPositions().map { it.toDomain() }
             val brokerPositions = brokerAdapter.getPositions()
 
             val matchResult = matchPositions(localPositions, brokerPositions)
@@ -74,7 +89,7 @@ class PositionReconciler(
 
     suspend fun reconcileAndRepair(): ReconciliationResult = withContext(Dispatchers.IO) {
         return@withContext try {
-            val localPositions = repository.getOpenPositions()
+            val localPositions = repository.getOpenPositions().map { it.toDomain() }
             val brokerPositions = brokerAdapter.getPositions()
 
             val matchResult = matchPositions(localPositions, brokerPositions)
@@ -88,7 +103,6 @@ class PositionReconciler(
                 )
                 ReconciliationResult.InSync
             } else {
-                // Attempt auto-repair
                 val repairResult = autoRepair(matchResult)
                 if (repairResult != null) {
                     repository.logEvent(
@@ -107,7 +121,6 @@ class PositionReconciler(
                     )
                 }
 
-                // Repair failed or not possible
                 val diffMsg = "Position mismatch! Local DB count: ${localPositions.size}, Broker count: ${brokerPositions.size}. " +
                     "Unmatched local: ${matchResult.unmatchedLocal.size}, Unmatched broker: ${matchResult.unmatchedBroker.size}. " +
                     "Auto-repair attempted but could not resolve all discrepancies."
@@ -132,7 +145,7 @@ class PositionReconciler(
     }
 
     private data class MatchResult(
-        val matched: List<Pair<Position, Position>>, // local, broker
+        val matched: List<Pair<Position, Position>>,
         val unmatchedLocal: List<Position>,
         val unmatchedBroker: List<Position>
     )
@@ -141,7 +154,6 @@ class PositionReconciler(
         val matched = mutableListOf<Pair<Position, Position>>()
         val usedBrokerIndices = mutableSetOf<Int>()
 
-        // First pass: Match by ID (primary key)
         localPositions.forEach { localPos ->
             val brokerIndex = brokerPositions.indexOfFirst { brokerPos ->
                 brokerPos.id == localPos.id && !usedBrokerIndices.contains(brokerPositions.indexOf(brokerPos))
@@ -152,7 +164,6 @@ class PositionReconciler(
             }
         }
 
-        // Second pass: Match by attributes (symbol, direction, entry price) for unmatched
         val unmatchedLocalAfterId = localPositions.filter { lp ->
             matched.none { it.first.id == lp.id }
         }
@@ -194,23 +205,18 @@ class PositionReconciler(
         val addedFromBroker = mutableListOf<Position>()
         val updatedLocal = mutableListOf<Position>()
 
-        // Remove stale local positions (exist in DB but not in broker)
         matchResult.unmatchedLocal.forEach { localPos ->
             repository.removePosition(localPos.id)
             removedLocal.add(localPos)
         }
 
-        // Add missing positions from broker
         matchResult.unmatchedBroker.forEach { brokerPos ->
-            // Use broker position ID as source of truth
             val position = brokerPos.copy(id = brokerPos.id)
-            repository.recordPosition(position)
+            repository.recordPosition(position.toRoom())
             addedFromBroker.add(position)
         }
 
-        // Update matched positions with latest broker data (prices, P&L)
         matchResult.matched.forEach { (localPos, brokerPos) ->
-            // Only update if prices/P&L differ significantly
             val priceChanged = abs(localPos.currentPrice - brokerPos.currentPrice) > positionMatchTolerance
             val profitChanged = abs(localPos.unrealizedProfit - brokerPos.unrealizedProfit) > 0.01
             val slTpChanged = localPos.stopLoss != brokerPos.stopLoss || localPos.takeProfit != brokerPos.takeProfit
@@ -223,7 +229,7 @@ class PositionReconciler(
                     stopLoss = brokerPos.stopLoss,
                     takeProfit = brokerPos.takeProfit
                 )
-                repository.recordPosition(updatedPos)
+                repository.recordPosition(updatedPos.toRoom())
                 updatedLocal.add(updatedPos)
             }
         }
@@ -234,11 +240,7 @@ class PositionReconciler(
     companion object {
         fun isRepairable(result: ReconciliationResult): Boolean {
             return when (result) {
-                is ReconciliationResult.Discrepancy -> {
-                    // Repairable if all unmatched broker positions can be added
-                    // and all unmatched local can be removed (no manual intervention needed)
-                    true
-                }
+                is ReconciliationResult.Discrepancy -> true
                 is ReconciliationResult.Repaired -> true
                 else -> false
             }

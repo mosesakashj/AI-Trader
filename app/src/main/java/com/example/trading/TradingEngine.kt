@@ -2,7 +2,10 @@ package com.example.trading
 
 import com.example.broker.*
 import com.example.data.entities.BotConfigEntity
-import com.example.data.firestore.FirestoreRepository
+import com.example.data.local.RoomPosition
+import com.example.data.local.RoomSignal
+import com.example.data.local.RoomTrade
+import com.example.data.repository.IRepository
 import com.example.domain.indicators.IndicatorCalculator
 import com.example.domain.model.*
 import com.example.domain.model.toClosedTrade
@@ -14,6 +17,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import timber.log.Timber
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
@@ -21,7 +25,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 class TradingEngine(
-    val repository: FirestoreRepository,
+    val repository: IRepository,
     private val notificationManager: AppNotificationManager,
     private val brokerFactory: (TradingMode) -> BrokerAdapter,
     val marketDataProvider: MarketDataProvider = PaperMarketDataProvider(),
@@ -32,6 +36,44 @@ class TradingEngine(
     private var engineJob: Job? = null
 
     val stateMachine = StateMachine()
+
+    private val multiTimeframeAnalyzer = MultiTimeframeAnalyzer()
+    private val positionManager = PositionManager()
+
+    private var sizingMethod = SizingMethod.FIXED_FRACTIONAL
+
+    // ─── Conversion helpers ────────────────────────────────────────────────
+
+    private fun Position.toRoom() = RoomPosition(
+        id = id, symbol = symbol, direction = direction.name, volume = volume,
+        entryPrice = entryPrice, currentPrice = currentPrice, stopLoss = stopLoss,
+        takeProfit = takeProfit, unrealizedProfit = unrealizedProfit, unrealizedR = unrealizedR,
+        openedAt = openedAt, mode = mode.name
+    )
+
+    private fun RoomPosition.toDomain() = Position(
+        id = id, symbol = symbol, direction = TradeDirection.valueOf(direction), volume = volume,
+        entryPrice = entryPrice, currentPrice = currentPrice, stopLoss = stopLoss,
+        takeProfit = takeProfit, unrealizedProfit = unrealizedProfit, unrealizedR = unrealizedR,
+        openedAt = openedAt, mode = TradingMode.valueOf(mode)
+    )
+
+    private fun Trade.toRoom() = RoomTrade(
+        id = id, brokerOrderId = brokerOrderId, brokerPositionId = brokerPositionId,
+        symbol = symbol, direction = direction.name, volume = volume, entryPrice = entryPrice,
+        stopLoss = stopLoss, takeProfit = takeProfit, riskAmount = riskAmount, riskPercent = riskPercent,
+        rr = rr, openedAt = openedAt, closedAt = closedAt, closePrice = closePrice, profit = profit,
+        profitR = profitR, status = status.name, closeReason = closeReason?.name,
+        strategyVersion = strategyVersion, mode = mode.name, slippage = slippage
+    )
+
+    private fun Signal.toRoom() = RoomSignal(
+        id = id, symbol = symbol, direction = direction.name, price = price, stopLoss = stopLoss,
+        takeProfit = takeProfit, rrRatio = rrRatio, candleTime = candleTime, timestamp = timestamp,
+        decision = explanation.decision, reason = explanation.reason, emaFast = explanation.emaFast,
+        emaSlow = explanation.emaSlow, adx = explanation.adx, atr = explanation.atr,
+        strategyVersion = strategyVersion
+    )
 
     private val _connectionState = MutableStateFlow(ConnectionState.OFFLINE)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -90,7 +132,7 @@ class TradingEngine(
     private val lastShadowProcessedTimes = ConcurrentHashMap<String, ConcurrentHashMap<StrategyType, Long>>()
 
     suspend fun initialize() {
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         val mode = runCatching { TradingMode.valueOf(config.mode) }.getOrDefault(TradingMode.PAPER)
         activeBroker = brokerFactory(mode)
         positionReconciler = PositionReconciler(repository, activeBroker)
@@ -156,7 +198,7 @@ class TradingEngine(
 
         engineJob = scope.launch {
             try {
-                val config = repository.getOrCreateConfig()
+                val config = repository.getOrCreateBotConfig()
                 val mode = runCatching { TradingMode.valueOf(config.mode) }.getOrDefault(TradingMode.PAPER)
 
                 // Broker connection
@@ -210,7 +252,7 @@ class TradingEngine(
                     else -> { /* InSync - proceed normally */ }
                 }
 
-                val openPositions = repository.getOpenPositions()
+                val openPositions = repository.getOpenPositions().map { it.toDomain() }
                 val targetState = if (openPositions.isNotEmpty()) StateMachineState.POSITION_OPEN else StateMachineState.READY
                 stateMachine.transitionTo(targetState, "Engine initialized & ready")
 
@@ -264,7 +306,7 @@ class TradingEngine(
                                 "Periodic reconciliation found unrepairable mismatch: ${reconciliation.message}"
                             )
                             // Only go to SAFE MODE if we have positions and can't repair
-                            val openPositions = repository.getOpenPositions()
+                            val openPositions = repository.getOpenPositions().map { it.toDomain() }
                             if (openPositions.isNotEmpty()) {
                                 stateMachine.forceState(
                                     StateMachineState.SAFE_MODE,
@@ -338,7 +380,7 @@ class TradingEngine(
         // 3. Process active positions with quote (SL/TP/BE/Trailing execution check)
         val closedTrades = activeBroker.onTick(quote)
         closedTrades.forEach { trade ->
-            repository.recordTrade(trade)
+            repository.recordTrade(trade.toRoom())
             repository.removePosition(trade.id)
 
             val plans = _marketStructurePlans.value.toMutableMap()
@@ -363,7 +405,7 @@ class TradingEngine(
             )
 
             // Update state machine
-            val remaining = repository.getOpenPositions()
+            val remaining = repository.getOpenPositions().map { it.toDomain() }
             if (remaining.isEmpty() && stateMachine.currentState.value == StateMachineState.POSITION_OPEN) {
                 stateMachine.transitionTo(StateMachineState.READY, "All positions closed")
             }
@@ -378,8 +420,8 @@ class TradingEngine(
 
         // 6. Evaluate strategy if in valid state
         if (stateMachine.currentState.value in listOf(StateMachineState.READY, StateMachineState.ANALYZING, StateMachineState.POSITION_OPEN)) {
-            val openPositions = repository.getOpenPositions()
-            val config = repository.getOrCreateConfig()
+            val openPositions = repository.getOpenPositions().map { it.toDomain() }
+            val config = repository.getOrCreateBotConfig()
             if (openPositions.size < config.maxOpenPositions) {
                 evaluateSymbol(quote.symbol, quote)
             }
@@ -387,10 +429,10 @@ class TradingEngine(
     }
 
     private suspend fun autoManagePositions(quote: Quote) {
-        val openPositions = repository.getOpenPositions().filter { it.symbol == quote.symbol }
+        val openPositions = repository.getOpenPositions().map { it.toDomain() }.filter { it.symbol == quote.symbol }
         if (openPositions.isEmpty()) return
 
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         val symbolConfig = symbolConfigs[quote.symbol] ?: return
         val candles = candlesMap[quote.symbol] ?: emptyList()
         val atr = if (candles.size >= 14) IndicatorCalculator.computeLatest(candles)?.atr ?: (symbolConfig.tickSize * 20.0) else (symbolConfig.tickSize * 20.0)
@@ -476,7 +518,7 @@ class TradingEngine(
                 unrealizedR = unrealizedR,
                 stopLoss = updatedSL
             )
-            repository.recordPosition(updatedPos)
+            repository.recordPosition(updatedPos.toRoom())
 
             // Market Structure & Continuous Trade Plan Monitor
             try {
@@ -523,7 +565,7 @@ class TradingEngine(
     }
 
     suspend fun closeSinglePosition(positionId: String, reason: CloseReason = CloseReason.MANUAL): Boolean {
-        val openPositions = repository.getOpenPositions()
+        val openPositions = repository.getOpenPositions().map { it.toDomain() }
         val pos = openPositions.find { it.id == positionId } ?: return false
         val res = activeBroker.closePosition(positionId, reason)
 
@@ -544,9 +586,9 @@ class TradingEngine(
                     reason = CloseReason.EXPIRED,
                     mode = activeBroker.mode
                 )
-                repository.recordTrade(closedTrade)
+                repository.recordTrade(closedTrade.toRoom())
                 notificationManager.notifyTradeClosed(closedTrade)
-                val remaining = repository.getOpenPositions()
+                val remaining = repository.getOpenPositions().map { it.toDomain() }
                 if (remaining.isEmpty() && stateMachine.currentState.value == StateMachineState.POSITION_OPEN) {
                     stateMachine.transitionTo(StateMachineState.READY, "Stale position cleaned up")
                 }
@@ -568,7 +610,7 @@ class TradingEngine(
             reason = reason,
             mode = activeBroker.mode
         )
-        repository.recordTrade(closedTrade)
+        repository.recordTrade(closedTrade.toRoom())
         notificationManager.notifyTradeClosed(closedTrade)
         repository.logEvent(
             LogLevel.INFO,
@@ -577,7 +619,7 @@ class TradingEngine(
             "Closed position on ${pos.symbol} at ${res.executedPrice}, P/L: $${"%.2f".format(pos.unrealizedProfit)}",
             pos.symbol
         )
-        val remaining = repository.getOpenPositions()
+        val remaining = repository.getOpenPositions().map { it.toDomain() }
         if (remaining.isEmpty() && stateMachine.currentState.value == StateMachineState.POSITION_OPEN) {
             stateMachine.transitionTo(StateMachineState.READY, "Position closed")
         }
@@ -607,7 +649,7 @@ class TradingEngine(
         val candles = candlesMap[symbol] ?: return
         val lastProcessedTime = lastProcessedCandleTimes[symbol] ?: 0L
 
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         val tradeMode = runCatching { TradeMode.valueOf(config.tradeMode) }.getOrDefault(TradeMode.BALANCED)
         val modePreset = TradeModePresets.getPreset(tradeMode)
 
@@ -621,7 +663,7 @@ class TradingEngine(
             safeModeReason = config.safeModeReason
         )
 
-        val openPositions = repository.getOpenPositions()
+        val openPositions = repository.getOpenPositions().map { it.toDomain() }
         val hasOpenPos = openPositions.any { it.symbol == symbol }
 
         val openingEquity = 10000.0 // Base daily equity
@@ -647,7 +689,7 @@ class TradingEngine(
         if (signal != null) {
             _latestSignal.value = signal
             lastProcessedCandleTimes[symbol] = signal.candleTime
-            repository.recordSignal(signal)
+            repository.recordSignal(signal.toRoom())
             notificationManager.notifySignal(signal)
 
             stateMachine.transitionTo(StateMachineState.SIGNAL_FOUND, "Signal: ${signal.symbol} ${signal.direction}")
@@ -717,7 +759,7 @@ class TradingEngine(
                     mode = activeBroker.mode
                 )
 
-                repository.recordPosition(newPosition)
+                repository.recordPosition(newPosition.toRoom())
                 stateMachine.transitionTo(StateMachineState.POSITION_OPEN, "Active position open on $symbol")
 
                 val openTrade = Trade(
@@ -739,7 +781,7 @@ class TradingEngine(
                     mode = activeBroker.mode,
                     slippage = orderResult.slippage
                 )
-                repository.recordTrade(openTrade)
+                repository.recordTrade(openTrade.toRoom())
                 notificationManager.notifyTradeOpened(openTrade)
 
                 repository.logEvent(
@@ -773,7 +815,7 @@ class TradingEngine(
         hasOpenPosition: Boolean,
         openPositionsCount: Int
     ) {
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         val tradeMode = runCatching { TradeMode.valueOf(config.tradeMode) }.getOrDefault(TradeMode.BALANCED)
         val modePreset = TradeModePresets.getPreset(tradeMode)
         val riskConfig = RiskConfig(
@@ -893,7 +935,7 @@ class TradingEngine(
         val closedCandles = candles.filter { it.isClosed }
         if (closedCandles.size < 30) return null
 
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
 
         val riskConfig = RiskConfig(
             defaultRiskPercent = config.defaultRiskPercent,
@@ -957,7 +999,7 @@ class TradingEngine(
             symbolConfig = symbolConfig,
             todayLossPercent = 0.0,
             consecutiveLosses = 0,
-            openPositionsCount = repository.getOpenPositions().size
+            openPositionsCount = repository.getOpenPositions().map { it.toDomain() }.size
         )
 
         return TradePlan(
@@ -976,7 +1018,7 @@ class TradingEngine(
     }
 
     suspend fun executeManualTrade(plan: TradePlan): OrderResult {
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         val orderRequest = OrderRequest(
             clientOrderId = UUID.randomUUID().toString(),
             symbol = plan.signal.symbol,
@@ -992,7 +1034,7 @@ class TradingEngine(
     }
 
     suspend fun triggerEmergencyStop(reason: String = "User Emergency Stop triggered") {
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         repository.updateConfig(config.copy(emergencyStop = true, isBotEnabled = false))
         stateMachine.forceState(StateMachineState.PAUSED, "EMERGENCY STOP: $reason")
         notificationManager.notifyEmergencyStop(reason)
@@ -1000,7 +1042,7 @@ class TradingEngine(
     }
 
     suspend fun closeAllPositions(reason: String = "Manual Close All requested") {
-        val openPositions = repository.getOpenPositions()
+        val openPositions = repository.getOpenPositions().map { it.toDomain() }
         openPositions.forEach { pos ->
             val res = activeBroker.closePosition(pos.id, CloseReason.EMERGENCY_STOP)
             if (!res.success) {
@@ -1022,14 +1064,14 @@ class TradingEngine(
                 reason = CloseReason.EMERGENCY_STOP,
                 mode = activeBroker.mode
             )
-            repository.recordTrade(closedTrade)
+            repository.recordTrade(closedTrade.toRoom())
             notificationManager.notifyTradeClosed(closedTrade)
         }
         stateMachine.transitionTo(StateMachineState.READY, "All positions liquidated")
     }
 
     suspend fun resetSafeMode() {
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         repository.updateConfig(config.copy(safeMode = false, safeModeReason = ""))
         stateMachine.forceState(StateMachineState.READY, "Safe Mode cleared by operator")
         repository.logEvent(LogLevel.INFO, "TradingEngine", "SAFE_MODE_CLEARED", "Operator cleared safe mode")
@@ -1056,7 +1098,7 @@ class TradingEngine(
         }
 
         accountManager.switchToAccount(accountId)
-        val config = repository.getOrCreateConfig()
+        val config = repository.getOrCreateBotConfig()
         val mode = runCatching { TradingMode.valueOf(config.mode) }.getOrDefault(TradingMode.PAPER)
         activeBroker = brokerFactory(mode)
         positionReconciler = PositionReconciler(repository, activeBroker)
@@ -1162,8 +1204,8 @@ class TradingEngine(
         val quote = _activeQuotes.value[plan.symbol]
             ?: return Result.failure(IllegalStateException("No active quote for ${plan.symbol}"))
 
-        val openPositions = repository.getOpenPositions()
-        val config = repository.getOrCreateConfig()
+        val openPositions = repository.getOpenPositions().map { it.toDomain() }
+        val config = repository.getOrCreateBotConfig()
 
         if (openPositions.size >= config.maxOpenPositions) {
             return Result.failure(IllegalStateException("Maximum open positions (${config.maxOpenPositions}) reached"))
@@ -1209,7 +1251,7 @@ class TradingEngine(
             mode = activeBroker.mode
         )
 
-        repository.recordPosition(newPosition)
+        repository.recordPosition(newPosition.toRoom())
         stateMachine.transitionTo(StateMachineState.POSITION_OPEN, "Active position open via AI Trade Plan on ${plan.symbol}")
 
         val openTrade = Trade(
@@ -1231,7 +1273,7 @@ class TradingEngine(
             mode = activeBroker.mode,
             slippage = orderResult.slippage
         )
-        repository.recordTrade(openTrade)
+        repository.recordTrade(openTrade.toRoom())
 
         repository.logEvent(
             LogLevel.INFO,
