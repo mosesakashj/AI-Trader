@@ -20,6 +20,14 @@ class TradingRepository(
 
     // ─── Config ───────────────────────────────────────────────────────────
 
+    val botConfigFlow: Flow<BotConfigEntity> = configDao.getConfigFlow().map { roomConfig ->
+        if (roomConfig != null && roomConfig.configJson.isNotBlank() && roomConfig.configJson != "{}") {
+            parseBotConfigFromJson(roomConfig.configJson)
+        } else {
+            cachedBotConfig ?: BotConfigEntity()
+        }
+    }
+
     suspend fun getOrCreateConfig(): RoomConfig {
         return configDao.getConfig() ?: RoomConfig(
             id = "primary_config",

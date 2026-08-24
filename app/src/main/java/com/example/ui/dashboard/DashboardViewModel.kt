@@ -1,17 +1,16 @@
 package com.example.ui.dashboard
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.EdgeTraderApp
 import com.example.data.entities.BotConfigEntity
-import com.example.data.local.*
+import com.example.data.local.toDomain
 import com.example.data.repository.TradingRepository
 import com.example.domain.model.*
 import com.example.domain.risk.AdvancedRiskManager
 import com.example.domain.risk.PortfolioRiskMetrics
 import com.example.domain.risk.SizingMethod
-import com.example.trading.StateTransitionRecord
+import com.example.service.TradingForegroundService
 import com.example.trading.TradingEngine
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -22,9 +21,7 @@ class DashboardViewModel(
     private val riskManager: AdvancedRiskManager = EdgeTraderApp.instance.riskManager
 ) : ViewModel() {
 
-    val config: StateFlow<BotConfigEntity?> = flow {
-        emit(repository.getOrCreateBotConfig())
-    }.stateIn(
+    val config: StateFlow<BotConfigEntity?> = repository.botConfigFlow.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         null
@@ -40,44 +37,38 @@ class DashboardViewModel(
     val circuitBreakerCount: StateFlow<Int> = engine.stateMachine.circuitBreakerCount
     val isCircuitOpen: StateFlow<Boolean> = engine.stateMachine.isCircuitOpen
 
-    val openPositions: StateFlow<List<Position>> = repository.openPositionsFlow.stateIn(
+    val openPositions: StateFlow<List<Position>> = repository.openPositionsFlow.map { list ->
+        list.map { it.toDomain() }
+    }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         emptyList()
     )
 
-    val recentTrades: StateFlow<List<Trade>> = repository.allTradesFlow.stateIn(
+    val recentTrades: StateFlow<List<Trade>> = repository.allTradesFlow.map { list ->
+        list.map { it.toDomain() }
+    }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         emptyList()
     )
 
-    val brokerAccounts: StateFlow<List<BrokerAccount>> = engine.accountManager?.accounts?.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        emptyList()
-    ) ?: MutableStateFlow(emptyList())
+    val brokerAccounts: StateFlow<List<BrokerAccount>> = engine.accountManager?.accounts ?: MutableStateFlow(emptyList())
 
-    val activeBrokerAccount: StateFlow<BrokerAccount?> = engine.accountManager?.activeAccount?.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        null
-    ) ?: MutableStateFlow(null)
+    val activeBrokerAccount: StateFlow<BrokerAccount?> = engine.accountManager?.activeAccount ?: MutableStateFlow(null)
 
     private val _portfolioRisk = MutableStateFlow<PortfolioRiskMetrics?>(null)
     val portfolioRisk: StateFlow<PortfolioRiskMetrics?> = _portfolioRisk.asStateFlow()
-
-    private val _brokerAccounts = MutableStateFlow<List<BrokerAccount>>(emptyList())
-    val brokerAccounts: StateFlow<List<BrokerAccount>> = _brokerAccounts.asStateFlow()
-
-    private val _activeBrokerAccount = MutableStateFlow<BrokerAccount?>(null)
-    val activeBrokerAccount: StateFlow<BrokerAccount?> = _activeBrokerAccount.asStateFlow()
 
     private val _sizingMethod = MutableStateFlow(SizingMethod.FIXED_FRACTIONAL)
     val sizingMethod: StateFlow<SizingMethod> = _sizingMethod.asStateFlow()
 
     init {
         viewModelScope.launch {
+            // Ensure engine and active account are initialized and balance synced
+            engine.initialize()
+            engine.syncAccountBalance()
+
             launch {
                 openPositions.collect { positions ->
                     updatePortfolioRisk(positions)
@@ -90,6 +81,19 @@ class DashboardViewModel(
                     }
                 }
             }
+            launch {
+                activeBrokerAccount.collect { acc ->
+                    if (acc != null) {
+                        engine.syncAccountBalance()
+                    }
+                }
+            }
+        }
+    }
+
+    fun syncBalance() {
+        viewModelScope.launch {
+            engine.syncAccountBalance()
         }
     }
 
@@ -114,12 +118,18 @@ class DashboardViewModel(
 
     fun toggleTradingBot(enable: Boolean) {
         viewModelScope.launch {
-            val cfg = repository.getOrCreateConfig()
-            repository.updateConfig(cfg.copy(isBotEnabled = enable, emergencyStop = false))
+            val cfg = repository.getOrCreateBotConfig()
+            repository.updateBotConfig(cfg.copy(isBotEnabled = enable, emergencyStop = false))
             if (enable) {
-                TradingForegroundService.startService(context)
+                engine.start()
+                runCatching {
+                    TradingForegroundService.startService(EdgeTraderApp.instance)
+                }
             } else {
-                TradingForegroundService.stopService(context)
+                engine.stop("User stopped bot from Dashboard")
+                runCatching {
+                    TradingForegroundService.stopService(EdgeTraderApp.instance)
+                }
             }
         }
     }
@@ -127,7 +137,9 @@ class DashboardViewModel(
     fun triggerEmergencyStop() {
         viewModelScope.launch {
             engine.triggerEmergencyStop("User Emergency Stop triggered from Dashboard")
-            TradingForegroundService.stopService(context)
+            runCatching {
+                TradingForegroundService.stopService(EdgeTraderApp.instance)
+            }
         }
     }
 
@@ -155,9 +167,5 @@ class DashboardViewModel(
 
     fun setSizingMethod(method: SizingMethod) {
         _sizingMethod.value = method
-    }
-
-    fun switchBrokerAccount(accountId: String) {
-        // Switch active broker account configuration
     }
 }

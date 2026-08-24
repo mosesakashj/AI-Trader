@@ -3,12 +3,7 @@ package com.example.data.local
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.ColumnInfo
-import com.example.domain.model.CloseReason
-import com.example.domain.model.Position
-import com.example.domain.model.Trade
-import com.example.domain.model.TradeDirection
-import com.example.domain.model.TradeStatus
-import com.example.domain.model.TradingMode
+import com.example.domain.model.*
 
 @Entity(tableName = "room_trades")
 data class RoomTrade(
@@ -139,4 +134,63 @@ fun RoomPosition.toDomain(): Position = Position(
     unrealizedR = unrealizedR,
     openedAt = openedAt,
     mode = runCatching { TradingMode.valueOf(mode) }.getOrDefault(TradingMode.PAPER)
+)
+
+fun Trade.toRoom() = RoomTrade(
+    id = id,
+    brokerOrderId = brokerOrderId,
+    brokerPositionId = brokerPositionId,
+    symbol = symbol,
+    direction = direction.name,
+    volume = volume,
+    entryPrice = entryPrice,
+    stopLoss = stopLoss,
+    takeProfit = takeProfit,
+    riskAmount = riskAmount,
+    riskPercent = riskPercent,
+    rr = rr,
+    openedAt = openedAt,
+    closedAt = closedAt,
+    closePrice = closePrice,
+    profit = profit,
+    profitR = profitR,
+    status = status.name,
+    closeReason = closeReason?.name,
+    strategyVersion = strategyVersion,
+    mode = mode.name,
+    slippage = slippage
+)
+
+fun Position.toRoom() = RoomPosition(
+    id = id,
+    symbol = symbol,
+    direction = direction.name,
+    volume = volume,
+    entryPrice = entryPrice,
+    currentPrice = currentPrice,
+    stopLoss = stopLoss,
+    takeProfit = takeProfit,
+    unrealizedProfit = unrealizedProfit,
+    unrealizedR = unrealizedR,
+    openedAt = openedAt,
+    mode = mode.name
+)
+
+fun Signal.toRoom() = RoomSignal(
+    id = id,
+    symbol = symbol,
+    direction = direction.name,
+    price = price,
+    stopLoss = stopLoss,
+    takeProfit = takeProfit,
+    rrRatio = rrRatio,
+    candleTime = candleTime,
+    timestamp = timestamp,
+    decision = explanation.decision,
+    reason = explanation.reason,
+    emaFast = explanation.emaFast,
+    emaSlow = explanation.emaSlow,
+    adx = explanation.adx,
+    atr = explanation.atr,
+    strategyVersion = strategyVersion
 )

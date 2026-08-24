@@ -131,10 +131,16 @@ class TradingStrategy(
         val emaSlow = indicators.emaSlow
         val adx = indicators.adx
 
-        if (adx < strategyConfig.adxThreshold) return null
+        val effectiveAdxThreshold = when (strategyConfig.tradeMode) {
+            TradeMode.AGGRESSIVE -> 15.0
+            TradeMode.BALANCED -> 18.0
+            TradeMode.CONSERVATIVE -> 22.0
+        }.coerceAtMost(strategyConfig.adxThreshold)
 
-        val emaBandUpper = emaFast + atr * 0.5
-        val emaBandLower = emaFast - atr * 0.5
+        if (adx < effectiveAdxThreshold) return null
+
+        val emaBandUpper = emaFast + atr * 0.6
+        val emaBandLower = emaFast - atr * 0.6
 
         val isBullishTrend = emaFast > emaSlow
         val isBearishTrend = emaFast < emaSlow
@@ -142,11 +148,11 @@ class TradingStrategy(
         val maxExtension = lastClosedCandle.close + atr * strategyConfig.maxCandleExtensionAtr
         val minExtension = lastClosedCandle.close - atr * strategyConfig.maxCandleExtensionAtr
 
-        val isBullishCandle = lastClosedCandle.close > lastClosedCandle.open
-        val isBearishCandle = lastClosedCandle.close < lastClosedCandle.open
+        val isBullishCandle = lastClosedCandle.close >= lastClosedCandle.open || lastClosedCandle.close > prevClosedCandle.close
+        val isBearishCandle = lastClosedCandle.close <= lastClosedCandle.open || lastClosedCandle.close < prevClosedCandle.close
 
         val adaptive = AdaptiveCalculator.computeAll(
-            atr = atr, adx = adx, adxThreshold = strategyConfig.adxThreshold,
+            atr = atr, adx = adx, adxThreshold = effectiveAdxThreshold,
             baseSlMultiplier = strategyConfig.atrSlMultiplier, baseRiskReward = strategyConfig.riskRewardRatio,
             baseBeTriggerR = strategyConfig.breakEvenTriggerR, baseBeBufferPips = strategyConfig.breakEvenBufferPips,
             baseTrailingDistanceAtr = strategyConfig.trailingStopDistanceAtr,
@@ -156,7 +162,7 @@ class TradingStrategy(
         )
 
         if (isBullishTrend) {
-            val pullbackToBand = lastClosedCandle.low <= emaBandUpper
+            val pullbackToBand = lastClosedCandle.low <= emaBandUpper || prevClosedCandle.low <= emaBandUpper
             val notExtended = lastClosedCandle.low >= minExtension
 
             if (pullbackToBand && notExtended && isBullishCandle) {
@@ -182,14 +188,14 @@ class TradingStrategy(
                         trendCheck = true, adxCheck = true, pullbackCheck = true, candleCheck = true,
                         spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                         decision = "BUY",
-                        reason = "Bullish trend (EMA Fast > EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bullish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}, BE@${"%.2f".format(adaptive.beTriggerR)}R]"
+                        reason = "Bullish trend (EMA Fast > Slow), ADX(${ "%.1f".format(adx) }) >= $effectiveAdxThreshold, pullback bounce confirmed [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}, BE@${"%.2f".format(adaptive.beTriggerR)}R]"
                     )
                 )
             }
         }
 
         if (isBearishTrend) {
-            val pullbackToBand = lastClosedCandle.high >= emaBandLower
+            val pullbackToBand = lastClosedCandle.high >= emaBandLower || prevClosedCandle.high >= emaBandLower
             val notExtended = lastClosedCandle.high <= maxExtension
 
             if (pullbackToBand && notExtended && isBearishCandle) {
@@ -215,7 +221,7 @@ class TradingStrategy(
                         trendCheck = true, adxCheck = true, pullbackCheck = true, candleCheck = true,
                         spreadCheck = spreadCheck, riskCheck = riskCheck, sessionCheck = sessionCheck,
                         decision = "SELL",
-                        reason = "Bearish trend (EMA Fast < EMA Slow), ADX >= ${strategyConfig.adxThreshold}, pullback to EMA band, bearish candle [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}, BE@${"%.2f".format(adaptive.beTriggerR)}R]"
+                        reason = "Bearish trend (EMA Fast < Slow), ADX(${ "%.1f".format(adx) }) >= $effectiveAdxThreshold, pullback bounce confirmed [Adaptive SL: ${"%.1f".format(adaptive.slDistance)}, TP: ${"%.1f".format(adaptive.tpDistance)}, BE@${"%.2f".format(adaptive.beTriggerR)}R]"
                     )
                 )
             }

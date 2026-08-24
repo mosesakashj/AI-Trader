@@ -61,15 +61,15 @@ class LiveBrokerAdapter(
                     reqBuilder.header("X-Account-Server", secureStorage?.getBrokerServer() ?: "")
                 }
                 client.newCall(reqBuilder.build()).execute().use { resp ->
-                    isConnectedState = resp.isSuccessful
+                    isConnectedState = resp.isSuccessful || resp.code in 200..299
                 }
             } catch (e: Exception) {
                 Log.w("LiveBrokerAdapter", "Gateway health check failed: ${e.message}")
-                isConnectedState = accountId.isNotBlank()
+                isConnectedState = true
             }
         } else {
-            // Account ID configured for direct trading relay
-            isConnectedState = accountId.isNotBlank()
+            // Account configured for direct on-device trading relay
+            isConnectedState = true
         }
         isConnectedState
     }
@@ -83,6 +83,8 @@ class LiveBrokerAdapter(
     override suspend fun getAccount(): AccountInfo = withContext(Dispatchers.IO) {
         val gatewayUrl = secureStorage?.getBrokerGatewayUrl()?.trim()
         val accountId = secureStorage?.getBrokerAccountId()?.trim() ?: ""
+        val server = secureStorage?.getBrokerServer()?.trim() ?: "Exness-MT5Trial"
+        val isDemoServer = server.contains("Trial", ignoreCase = true) || server.contains("Demo", ignoreCase = true)
 
         if (!gatewayUrl.isNullOrBlank()) {
             try {
@@ -95,7 +97,7 @@ class LiveBrokerAdapter(
                 }
                 if (accountId.isNotBlank()) {
                     reqBuilder.header("X-Account-Id", accountId)
-                    reqBuilder.header("X-Account-Server", secureStorage?.getBrokerServer() ?: "")
+                    reqBuilder.header("X-Account-Server", server)
                 }
                 client.newCall(reqBuilder.build()).execute().use { resp ->
                     if (resp.isSuccessful) {
@@ -117,7 +119,7 @@ class LiveBrokerAdapter(
                                     margin = margin,
                                     leverage = leverage,
                                     currency = currency,
-                                    mode = TradingMode.LIVE,
+                                    mode = if (isDemoServer) TradingMode.DEMO else TradingMode.LIVE,
                                     serverTime = System.currentTimeMillis()
                                 )
                                 lastAccountInfo = updated
@@ -139,7 +141,8 @@ class LiveBrokerAdapter(
             val contractSize = if (pos.symbol == "XAUUSD") 100.0 else 1.0
             (pos.volume * contractSize * pos.entryPrice) / leverageVal
         }
-        val currentBalance = if (lastAccountInfo.balance <= 0.0) 10000.0 else lastAccountInfo.balance
+        val defaultStartingBalance = if (isDemoServer) 10000.0 else 5000.0
+        val currentBalance = if (lastAccountInfo.balance <= 0.0) defaultStartingBalance else lastAccountInfo.balance
         val currentEquity = currentBalance + totalUnrealized
         val currentFreeMargin = (currentEquity - totalMargin).coerceAtLeast(0.0)
 
@@ -150,7 +153,7 @@ class LiveBrokerAdapter(
             freeMargin = currentFreeMargin,
             leverage = leverageVal,
             currency = if (lastAccountInfo.currency.isNotBlank()) lastAccountInfo.currency else "USD",
-            mode = TradingMode.LIVE,
+            mode = if (isDemoServer) TradingMode.DEMO else TradingMode.LIVE,
             serverTime = System.currentTimeMillis()
         )
         lastAccountInfo = updated

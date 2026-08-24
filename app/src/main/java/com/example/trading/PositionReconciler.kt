@@ -1,7 +1,9 @@
 package com.example.trading
 
 import com.example.broker.BrokerAdapter
-import com.example.data.firestore.FirestoreRepository
+import com.example.data.local.toDomain
+import com.example.data.local.toRoom
+import com.example.data.repository.IRepository
 import com.example.domain.model.LogLevel
 import com.example.domain.model.Position
 import com.example.domain.model.TradeDirection
@@ -28,7 +30,7 @@ sealed class ReconciliationResult {
 }
 
 class PositionReconciler(
-    private val repository: FirestoreRepository,
+    private val repository: IRepository,
     private val brokerAdapter: BrokerAdapter
 ) {
 
@@ -36,7 +38,7 @@ class PositionReconciler(
 
     suspend fun reconcile(): ReconciliationResult = withContext(Dispatchers.IO) {
         return@withContext try {
-            val localPositions = repository.getOpenPositions()
+            val localPositions = repository.getOpenPositions().map { it.toDomain() }
             val brokerPositions = brokerAdapter.getPositions()
 
             val matchResult = matchPositions(localPositions, brokerPositions)
@@ -74,7 +76,7 @@ class PositionReconciler(
 
     suspend fun reconcileAndRepair(): ReconciliationResult = withContext(Dispatchers.IO) {
         return@withContext try {
-            val localPositions = repository.getOpenPositions()
+            val localPositions = repository.getOpenPositions().map { it.toDomain() }
             val brokerPositions = brokerAdapter.getPositions()
 
             val matchResult = matchPositions(localPositions, brokerPositions)
@@ -197,7 +199,7 @@ class PositionReconciler(
 
         matchResult.unmatchedBroker.forEach { brokerPos ->
             val position = brokerPos.copy(id = brokerPos.id)
-            repository.recordPosition(position)
+            repository.recordPosition(position.toRoom())
             addedFromBroker.add(position)
         }
 
@@ -214,7 +216,7 @@ class PositionReconciler(
                     stopLoss = brokerPos.stopLoss,
                     takeProfit = brokerPos.takeProfit
                 )
-                repository.recordPosition(updatedPos)
+                repository.recordPosition(updatedPos.toRoom())
                 updatedLocal.add(updatedPos)
             }
         }

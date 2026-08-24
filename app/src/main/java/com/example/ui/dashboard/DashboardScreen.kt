@@ -53,7 +53,7 @@ fun DashboardScreen(
     LaunchedEffect(Unit) { insightsRepo.refreshAll() }
 
     val allTrades by viewModel.recentTrades.collectAsStateWithLifecycle()
-    val perfStats = remember(allTrades) { computePerformanceStats(allTrades.map { it.toDomain() }) }
+    val perfStats = remember(allTrades) { computePerformanceStats(allTrades) }
 
     val brokerAccounts by viewModel.brokerAccounts.collectAsStateWithLifecycle()
     val activeBrokerAccount by viewModel.activeBrokerAccount.collectAsStateWithLifecycle()
@@ -135,27 +135,78 @@ fun DashboardScreen(
                         }
                     }
 
-                    if (brokerAccounts.size > 1) {
-                        Surface(
-                            color = SurfaceVariantDark,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth().clickable { showAccountSwitcher = true }
+                    // Connected Account Switcher & Sync Strip (Always Visible)
+                    Surface(
+                        color = SurfaceVariantDark,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, CardBorderDark),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showAccountSwitcher = true }
+                            .testTag("account_switcher_bar")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Icon(Icons.Default.AccountBalance, contentDescription = null, tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                Surface(
+                                    color = if (activeBrokerAccount?.server?.contains("Trial", ignoreCase = true) == true || activeBrokerAccount?.server?.contains("Demo", ignoreCase = true) == true) PrimaryBlueContainer else EmeraldContainer,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
                                     Text(
-                                        text = "${activeBrokerAccount?.label ?: "Account"} • #${activeBrokerAccount?.accountId ?: "---"}",
+                                        text = if (activeBrokerAccount?.server?.contains("Trial", ignoreCase = true) == true || activeBrokerAccount?.server?.contains("Demo", ignoreCase = true) == true) "DEMO" else "REAL",
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TextPrimary
+                                        fontWeight = FontWeight.Black,
+                                        color = if (activeBrokerAccount?.server?.contains("Trial", ignoreCase = true) == true || activeBrokerAccount?.server?.contains("Demo", ignoreCase = true) == true) PrimaryBlue else EmeraldDark,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                     )
                                 }
-                                Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Account", tint = PrimaryBlue, modifier = Modifier.size(16.dp))
+                                Column {
+                                    Text(
+                                        text = activeBrokerAccount?.label ?: "Exness MT5 Demo",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary
+                                    )
+                                    Text(
+                                        text = "#${activeBrokerAccount?.accountId ?: "14289052"} \u00b7 ${activeBrokerAccount?.server ?: "Exness-MT5Trial"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextSecondary,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(
+                                    onClick = { viewModel.syncBalance() },
+                                    modifier = Modifier.size(28.dp).testTag("sync_balance_btn")
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Sync Balance",
+                                        tint = PrimaryBlue,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Surface(
+                                    color = PrimaryBlueContainer,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    ) {
+                                        Text("Switch", style = MaterialTheme.typography.labelSmall, color = PrimaryBlue, fontWeight = FontWeight.Bold)
+                                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch Account", tint = PrimaryBlue, modifier = Modifier.size(14.dp))
+                                    }
+                                }
                             }
                         }
                     }
@@ -538,13 +589,13 @@ fun DashboardScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        val isBuy = pos.direction.equals(TradeDirection.BUY.name, ignoreCase = true)
+                                        val isBuy = pos.direction == TradeDirection.BUY
                                         Surface(
                                             color = if (isBuy) EmeraldContainer else CrimsonContainer,
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
                                             Text(
-                                                text = pos.direction,
+                                                text = pos.direction.name,
                                                 color = if (isBuy) EmeraldDark else CrimsonDark,
                                                 fontWeight = FontWeight.Black,
                                                 style = MaterialTheme.typography.labelSmall,

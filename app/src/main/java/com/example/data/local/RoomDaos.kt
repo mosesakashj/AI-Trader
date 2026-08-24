@@ -128,6 +128,9 @@ interface ConfigDao {
     @Query("SELECT * FROM room_config WHERE id = :id")
     suspend fun getConfig(id: String = "primary_config"): RoomConfig?
 
+    @Query("SELECT * FROM room_config WHERE id = :id")
+    fun getConfigFlow(id: String = "primary_config"): Flow<RoomConfig?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertConfig(config: RoomConfig)
 

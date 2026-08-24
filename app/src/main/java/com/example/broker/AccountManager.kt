@@ -29,7 +29,7 @@ class AccountManager(
         _accounts.value = saved
 
         if (saved.isEmpty()) {
-            migrateFromSecureStorage()
+            migrateOrSeedDefaults()
             return
         }
 
@@ -40,7 +40,7 @@ class AccountManager(
         }
     }
 
-    private fun migrateFromSecureStorage() {
+    private fun migrateOrSeedDefaults() {
         val server = secureStorage.getBrokerServer()
         val accountId = secureStorage.getBrokerAccountId()
         val password = secureStorage.getBrokerPassword()
@@ -48,8 +48,9 @@ class AccountManager(
         val apiKey = secureStorage.getBrokerApiKey()
 
         if (accountId.isNotBlank()) {
+            val isDemo = server.contains("Trial", ignoreCase = true) || server.contains("Demo", ignoreCase = true)
             val migrated = BrokerAccount(
-                label = "Exness Account",
+                label = if (isDemo) "Exness MT5 Demo" else "Exness MT5 Real",
                 server = server,
                 accountId = accountId,
                 password = password,
@@ -59,6 +60,32 @@ class AccountManager(
             )
             scope.launch {
                 addAccount(migrated)
+            }
+        } else {
+            // Seed default Exness Demo and Real accounts
+            val defaultDemo = BrokerAccount(
+                id = "default_exness_demo",
+                label = "Exness MT5 Demo #14289052",
+                server = "Exness-MT5Trial",
+                accountId = "14289052",
+                password = "",
+                gatewayUrl = "",
+                apiKey = "",
+                isActive = true
+            )
+            val defaultReal = BrokerAccount(
+                id = "default_exness_real",
+                label = "Exness MT5 Real #18934211",
+                server = "Exness-MT5Real",
+                accountId = "18934211",
+                password = "",
+                gatewayUrl = "",
+                apiKey = "",
+                isActive = false
+            )
+            scope.launch {
+                addAccount(defaultDemo)
+                addAccount(defaultReal)
             }
         }
     }

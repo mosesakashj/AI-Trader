@@ -22,6 +22,9 @@ import com.example.notifications.TelegramNotifier
 import com.example.security.SecureStorage
 import com.example.trading.TradingEngine
 import com.example.watchdog.WatchdogManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class EdgeTraderApp : Application() {
@@ -144,6 +147,12 @@ class EdgeTraderApp : Application() {
                 tradingEngine.recoverState()
             }
         )
+
+        CoroutineScope(Dispatchers.IO).launch {
+            accountManager.initialize()
+            tradingEngine.initialize()
+            tradingEngine.syncAccountBalance()
+        }
     }
 
     companion object {
