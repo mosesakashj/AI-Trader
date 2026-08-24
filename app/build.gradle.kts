@@ -7,6 +7,8 @@ plugins {
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
+  alias(libs.plugins.hilt)
+  alias(libs.plugins.ksp)
 }
 
 android {
@@ -96,7 +98,20 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation(libs.androidx.navigation.compose)
-  // Room removed — Firestore is primary data store
+  // Room
+  implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.room.ktx)
+  "ksp"(libs.androidx.room.compiler)
+  // Hilt
+  implementation(libs.hilt)
+  "ksp"(libs.hilt)
+  implementation(libs.hilt.navigation.compose)
+  implementation(libs.hilt.work)
+  "ksp"(libs.hilt.work.compiler)
+  // Timber
+  implementation(libs.timber)
+  // WorkManager
+  implementation(libs.work.runtime.ktx)
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
