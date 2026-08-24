@@ -880,7 +880,8 @@ class TradingEngine(
     suspend fun analyzeSymbolForTradePlan(
         symbol: String,
         strategyType: StrategyType,
-        strategyConfig: StrategyConfig
+        strategyConfig: StrategyConfig,
+        timeframe: Timeframe = symbolConfigs[symbol]?.preferredTimeframe ?: Timeframe.M15
     ): TradePlan? {
         val symbolConfig = symbolConfigs[symbol] ?: return null
         if (!symbolConfig.enabled) return null
@@ -888,7 +889,7 @@ class TradingEngine(
         val sessionInfo = MarketScheduleUtils.getMarketSession(symbol)
         val quote = _activeQuotes.value[symbol] ?: return null
 
-        val candles = candlesMap[symbol]?.toList() ?: return null
+        val candles = marketDataProvider.getHistoricalCandles(symbol, timeframe, 80)
         val closedCandles = candles.filter { it.isClosed }
         if (closedCandles.size < 30) return null
 
@@ -969,7 +970,8 @@ class TradingEngine(
             validation = validation,
             positionSize = volume,
             riskAmount = theoreticalRisk,
-            marketSession = sessionInfo
+            marketSession = sessionInfo,
+            analysisTimeframe = timeframe
         )
     }
 

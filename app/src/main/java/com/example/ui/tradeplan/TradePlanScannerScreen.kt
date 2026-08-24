@@ -32,6 +32,7 @@ fun TradePlanScannerScreen(viewModel: TradePlanScannerViewModel = viewModel()) {
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val filterDirection by viewModel.filterDirection.collectAsStateWithLifecycle()
     val filterStrategy by viewModel.filterStrategy.collectAsStateWithLifecycle()
+    val filterTimeframe by viewModel.filterTimeframe.collectAsStateWithLifecycle()
     val executionResult by viewModel.executionResult.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -78,7 +79,7 @@ fun TradePlanScannerScreen(viewModel: TradePlanScannerViewModel = viewModel()) {
                         ) {
                             Column {
                                 Text("Trade Plan Scanner", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge, color = TextPrimary)
-                                Text("Analyze all pairs across 6 strategies", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                Text("Analyze all pairs across 6 strategies & 6 timeframes", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                             }
                         }
 
@@ -169,6 +170,33 @@ fun TradePlanScannerScreen(viewModel: TradePlanScannerViewModel = viewModel()) {
                                 label = { Text(strategy.displayName, style = MaterialTheme.typography.labelSmall) },
                                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PrimaryBlueContainer, selectedLabelColor = PrimaryBlue, containerColor = SurfaceDark, labelColor = TextSecondary),
                                 border = BorderStroke(1.dp, if (filterStrategy == strategy) PrimaryBlue else CardBorderDark),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Timeframe Filter Chips
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = filterTimeframe == null,
+                            onClick = { viewModel.setFilterTimeframe(null) },
+                            label = { Text("All Timeframes", style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PrimaryBlueContainer, selectedLabelColor = PrimaryBlue, containerColor = SurfaceDark, labelColor = TextSecondary),
+                            border = BorderStroke(1.dp, if (filterTimeframe == null) PrimaryBlue else CardBorderDark),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        listOf(Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.M30, Timeframe.H1, Timeframe.H4).forEach { tf ->
+                            FilterChip(
+                                selected = filterTimeframe == tf,
+                                onClick = { viewModel.setFilterTimeframe(if (filterTimeframe == tf) null else tf) },
+                                label = { Text(tf.label, style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PrimaryBlueContainer, selectedLabelColor = PrimaryBlue, containerColor = SurfaceDark, labelColor = TextSecondary),
+                                border = BorderStroke(1.dp, if (filterTimeframe == tf) PrimaryBlue else CardBorderDark),
                                 shape = RoundedCornerShape(8.dp)
                             )
                         }

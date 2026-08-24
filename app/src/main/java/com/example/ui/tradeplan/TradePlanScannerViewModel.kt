@@ -30,6 +30,9 @@ class TradePlanScannerViewModel(
     private val _filterStrategy = MutableStateFlow<StrategyType?>(null)
     val filterStrategy: StateFlow<StrategyType?> = _filterStrategy.asStateFlow()
 
+    private val _filterTimeframe = MutableStateFlow<Timeframe?>(null)
+    val filterTimeframe: StateFlow<Timeframe?> = _filterTimeframe.asStateFlow()
+
     private val _executionResult = MutableStateFlow<ExecutionState>(ExecutionState.Idle)
     val executionResult: StateFlow<ExecutionState> = _executionResult.asStateFlow()
 
@@ -49,21 +52,25 @@ class TradePlanScannerViewModel(
             withContext(Dispatchers.Default) {
                 val symbols = SymbolCatalog.ALL_SYMBOLS.filter { it.enabled }
                 val strategyTypes = StrategyType.entries
+                val timeframes = listOf(Timeframe.M1, Timeframe.M5, Timeframe.M15, Timeframe.M30, Timeframe.H1, Timeframe.H4)
 
                 for (symbolConfig in symbols) {
                     for (strategyType in strategyTypes) {
-                        try {
-                            val strategyConfig = buildStrategyConfig(strategyType)
-                            val plan = engine.analyzeSymbolForTradePlan(
-                                symbol = symbolConfig.symbol,
-                                strategyType = strategyType,
-                                strategyConfig = strategyConfig
-                            )
-                            if (plan != null) {
-                                allPlans.add(plan)
+                        for (timeframe in timeframes) {
+                            try {
+                                val strategyConfig = buildStrategyConfig(strategyType)
+                                val plan = engine.analyzeSymbolForTradePlan(
+                                    symbol = symbolConfig.symbol,
+                                    strategyType = strategyType,
+                                    strategyConfig = strategyConfig,
+                                    timeframe = timeframe
+                                )
+                                if (plan != null) {
+                                    allPlans.add(plan)
+                                }
+                            } catch (_: Exception) {
+                                // Skip failed analysis
                             }
-                        } catch (_: Exception) {
-                            // Skip failed analysis
                         }
                     }
                 }
@@ -82,6 +89,11 @@ class TradePlanScannerViewModel(
 
     fun setFilterStrategy(strategy: StrategyType?) {
         _filterStrategy.value = strategy
+        applyFilters()
+    }
+
+    fun setFilterTimeframe(timeframe: Timeframe?) {
+        _filterTimeframe.value = timeframe
         applyFilters()
     }
 
@@ -113,7 +125,8 @@ class TradePlanScannerViewModel(
         val plans = _tradePlans.value.filter { plan ->
             val dirMatch = _filterDirection.value == null || plan.signal.direction == _filterDirection.value
             val stratMatch = _filterStrategy.value == null || plan.strategyType == _filterStrategy.value
-            dirMatch && stratMatch
+            val tfMatch = _filterTimeframe.value == null || plan.analysisTimeframe == _filterTimeframe.value
+            dirMatch && stratMatch && tfMatch
         }
         _filteredPlans.value = plans
     }

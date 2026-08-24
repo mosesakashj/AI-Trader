@@ -80,6 +80,15 @@ fun TradePlanCard(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
+                Surface(color = GoldContainer, shape = RoundedCornerShape(6.dp)) {
+                    Text(
+                        text = plan.analysisTimeframe.label,
+                        color = GoldHero,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))

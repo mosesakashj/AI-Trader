@@ -13,5 +13,6 @@ data class TradePlan(
     val validation: OrderValidation? = null,
     val positionSize: Double = 0.0,
     val riskAmount: Double = 0.0,
-    val marketSession: MarketSessionInfo
+    val marketSession: MarketSessionInfo,
+    val analysisTimeframe: Timeframe = symbolConfig.preferredTimeframe
 )
